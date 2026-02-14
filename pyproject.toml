@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "e2epool"
+version = "0.1.0"
+description = "E2E Test Pool Lifecycle Controller"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy>=2.0",
+    "alembic>=1.14",
+    "psycopg2-binary>=2.9",
+    "pydantic-settings>=2.0",
+    "celery[redis]>=5.4",
+    "pyyaml>=6.0",
+    "proxmoxer>=2.1",
+
+    "httpx>=0.28",
+    "structlog>=24.0",
+    "websockets>=13.0",
+    "click>=8.0",
+]
+
+[project.scripts]
+e2epool = "e2epool.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "httpx",
+    "factory-boy>=3.3",
+    "ruff>=0.8",
+]
+
+[tool.setuptools.packages.find]
+include = ["e2epool*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+exclude = ["alembic/versions/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["F403", "F405"]

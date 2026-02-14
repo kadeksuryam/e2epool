@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.e2epool.agent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/e2epool</string>
+        <string>agent</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>E2EPOOL_AGENT_CONFIG</key>
+        <string>/etc/e2epool/agent.yml</string>
+    </dict>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/e2epool-agent.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/var/log/e2epool-agent.stderr.log</string>
+</dict>
+</plist>

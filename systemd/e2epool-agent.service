@@ -1,0 +1,13 @@
+[Unit]
+Description=e2epool Agent
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/e2epool agent
+Restart=always
+RestartSec=10
+Environment=E2EPOOL_AGENT_CONFIG=/etc/e2epool/agent.yml
+
+[Install]
+WantedBy=multi-user.target
