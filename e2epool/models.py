@@ -1,6 +1,7 @@
 import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -80,3 +81,52 @@ class OperationLog(Base):
     duration_ms = Column(Integer, nullable=True)
 
     checkpoint = relationship("Checkpoint", back_populates="operation_logs")
+
+
+VALID_BACKENDS = ("proxmox", "bare_metal")
+
+
+class Runner(Base):
+    __tablename__ = "runners"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    runner_id = Column(String(255), unique=True, nullable=False)
+    backend = Column(String(50), nullable=False)
+    token = Column(String(255), unique=True, nullable=False)
+
+    # Proxmox-specific
+    proxmox_host = Column(String(255), nullable=True)
+    proxmox_user = Column(String(255), nullable=True)
+    proxmox_token_name = Column(String(255), nullable=True)
+    proxmox_token_value = Column(String(255), nullable=True)
+    proxmox_node = Column(String(255), nullable=True)
+    proxmox_vmid = Column(Integer, nullable=True)
+
+    # Bare-metal specific
+    reset_cmd = Column(Text, nullable=True)
+    cleanup_cmd = Column(Text, nullable=True)
+    readiness_cmd = Column(Text, nullable=True)
+
+    # CI runner ID for pause/unpause
+    gitlab_runner_id = Column(Integer, nullable=True)
+
+    # Common
+    tags = Column(Text, nullable=True)  # JSON-encoded list
+
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.datetime.utcnow,
+        onupdate=datetime.datetime.utcnow,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            f"backend IN {VALID_BACKENDS!r}",
+            name="ck_runner_backend",
+        ),
+        Index("ix_runners_runner_id", "runner_id", unique=True),
+        Index("ix_runners_token", "token", unique=True),
+    )

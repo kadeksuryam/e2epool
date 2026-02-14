@@ -5,7 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 from e2epool.database import Base
-from e2epool.models import Checkpoint, OperationLog  # noqa: F401
+from e2epool.models import Checkpoint, OperationLog, Runner  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

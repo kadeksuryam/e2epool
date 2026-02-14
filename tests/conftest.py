@@ -13,11 +13,13 @@ os.environ.setdefault(
 os.environ.setdefault("E2EPOOL_REDIS_URL", "redis://localhost:6381/1")
 os.environ.setdefault("E2EPOOL_INVENTORY_PATH", "inventory.example.yml")
 os.environ.setdefault("E2EPOOL_FINALIZE_COOLDOWN_SECONDS", "5")
+os.environ.setdefault("E2EPOOL_ADMIN_TOKEN", "test-admin-token")
 
 from e2epool.database import Base, get_db
 from e2epool.dependencies import set_backends, set_inventory
 from e2epool.inventory import Inventory, RunnerConfig
 from e2epool.main import app
+from e2epool.models import Runner
 
 TEST_DATABASE_URL = os.environ["E2EPOOL_DATABASE_URL"]
 
@@ -144,8 +146,26 @@ def mock_backend():
     return backend
 
 
+def _seed_runner_to_db(session, runner_config):
+    """Insert a RunnerConfig into the runners table."""
+    from e2epool.services.runner_service import config_to_runner
+
+    row = config_to_runner(runner_config)
+    session.add(row)
+    session.flush()
+    return row
+
+
 @pytest.fixture
-def client(db, mock_inventory, mock_backend):
+def seed_runners(db, mock_runner, mock_bare_metal_runner):
+    """Seed runner rows into the DB (within the transactional test session)."""
+    _seed_runner_to_db(db, mock_runner)
+    _seed_runner_to_db(db, mock_bare_metal_runner)
+    return [mock_runner, mock_bare_metal_runner]
+
+
+@pytest.fixture
+def client(db, mock_inventory, mock_backend, seed_runners):
     """TestClient with overridden DB dependency."""
 
     def override_get_db():

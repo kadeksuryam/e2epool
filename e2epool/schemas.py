@@ -73,3 +73,74 @@ class ReadinessResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     detail: str | None = None
+
+
+# --- Runner admin schemas ---
+
+
+def _parse_tags(v: list[str] | str | None) -> list[str]:
+    """Parse tags from JSON string (DB) or pass through list (API input)."""
+    if v is None:
+        return []
+    if isinstance(v, str):
+        import json
+
+        return json.loads(v)
+    return v
+
+
+class RunnerCreateRequest(BaseModel):
+    runner_id: str = Field(min_length=1, max_length=255, pattern=r"^[\w.\-]+$")
+    backend: str = Field(min_length=1, max_length=50)
+
+    # Proxmox-specific
+    proxmox_host: str | None = None
+    proxmox_user: str | None = None
+    proxmox_token_name: str | None = None
+    proxmox_token_value: str | None = None
+    proxmox_node: str | None = None
+    proxmox_vmid: int | None = None
+
+    # Bare-metal specific
+    reset_cmd: str | None = None
+    cleanup_cmd: str | None = None
+    readiness_cmd: str | None = None
+
+    # CI runner ID
+    gitlab_runner_id: int | None = None
+
+    # Common
+    tags: list[str] = []
+
+
+class RunnerListResponse(BaseModel):
+    """Returned on list/get — omits token and proxmox_token_value."""
+
+    runner_id: str
+    backend: str
+
+    proxmox_host: str | None = None
+    proxmox_user: str | None = None
+    proxmox_token_name: str | None = None
+    proxmox_node: str | None = None
+    proxmox_vmid: int | None = None
+
+    reset_cmd: str | None = None
+    cleanup_cmd: str | None = None
+    readiness_cmd: str | None = None
+
+    gitlab_runner_id: int | None = None
+    tags: list[str] = []
+    is_active: bool = True
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    _parse_tags = field_validator("tags", mode="before")(staticmethod(_parse_tags))
+
+    model_config = {"from_attributes": True}
+
+
+class RunnerResponse(RunnerListResponse):
+    """Returned on creation — includes token."""
+
+    token: str

@@ -108,6 +108,53 @@ def status(checkpoint, socket):
         sys.exit(1)
 
 
+@main.command("import-inventory")
+@click.option(
+    "--path", required=True, type=click.Path(exists=True), help="Path to inventory YAML."
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be imported without writing.")
+def import_inventory(path, dry_run):
+    """Import runners from a YAML inventory file into the database."""
+    from e2epool.database import SessionLocal
+    from e2epool.inventory import load_inventory
+    from e2epool.models import Runner
+    from e2epool.services.runner_service import config_to_runner
+
+    inv = load_inventory(path)
+    db = SessionLocal()
+    try:
+        created = 0
+        skipped = 0
+        for rid in inv.runner_ids:
+            rc = inv.get_runner(rid)
+            existing = db.query(Runner).filter(Runner.runner_id == rid).first()
+            if existing:
+                click.echo(f"  skip  {rid} (already exists)")
+                skipped += 1
+                continue
+
+            if dry_run:
+                click.echo(f"  would create  {rid}")
+                created += 1
+                continue
+
+            db.add(config_to_runner(rc))
+            click.echo(f"  create  {rid}")
+            created += 1
+
+        if not dry_run:
+            db.commit()
+
+        prefix = "[dry-run] " if dry_run else ""
+        click.echo(f"{prefix}Done: {created} created, {skipped} skipped")
+    except Exception as e:
+        db.rollback()
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        db.close()
+
+
 def _ipc_request(socket_path: str, msg: dict) -> dict:
     client = IPCClient(socket_path)
     try:

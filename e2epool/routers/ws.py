@@ -3,7 +3,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from e2epool.database import SessionLocal
-from e2epool.dependencies import get_inventory, verify_ws_token
+from e2epool.dependencies import verify_ws_token
 from e2epool.schemas import WSRequest
 from e2epool.services.ws_handler import handle_message
 from e2epool.services.ws_manager import ws_manager
@@ -19,12 +19,14 @@ async def ws_agent(
     runner_id: str = Query(...),
     token: str = Query(...),
 ):
-    inventory = get_inventory()
+    db = SessionLocal()
     try:
-        runner = verify_ws_token(runner_id, token, inventory)
+        runner = verify_ws_token(runner_id, token, db)
     except ValueError:
         await websocket.close(code=4401, reason="Invalid credentials")
         return
+    finally:
+        db.close()
 
     await websocket.accept()
     await ws_manager.connect(runner_id, websocket)

@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # Poller toggle (disable when webhooks are configured)
     poller_enabled: bool = True
 
+    # Admin API
+    admin_token: str | None = None
+
     # Batch processing
     query_batch_size: int = 200
 

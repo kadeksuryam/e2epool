@@ -38,6 +38,7 @@ services:
       E2EPOOL_DATABASE_URL: "postgresql://e2epool:${DB_PASSWORD}@db:5432/e2epool"
       E2EPOOL_REDIS_URL: redis://redis:6379/0
       E2EPOOL_API_BASE_URL: http://app:8080
+      E2EPOOL_ADMIN_TOKEN: "${ADMIN_TOKEN}"
     depends_on:
       db:
         condition: service_healthy

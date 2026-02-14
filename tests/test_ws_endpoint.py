@@ -6,7 +6,7 @@ from starlette.testclient import TestClient
 from e2epool.dependencies import set_backends, set_inventory
 from e2epool.inventory import Inventory
 from e2epool.services.ws_manager import ws_manager
-from tests.conftest import _make_runner
+from tests.conftest import _make_runner, _seed_runner_to_db, TestSessionLocal
 
 
 @pytest.fixture
@@ -33,7 +33,24 @@ def backend():
 
 
 @pytest.fixture
-def ws_client(inventory, backend):
+def ws_db_runner(runner):
+    """Seed runner into real DB (committed) so WS auth can find it."""
+    session = TestSessionLocal()
+    try:
+        _seed_runner_to_db(session, runner)
+        session.commit()
+        yield runner
+    finally:
+        # Cleanup: delete the seeded row
+        from e2epool.models import Runner
+
+        session.query(Runner).filter(Runner.runner_id == runner.runner_id).delete()
+        session.commit()
+        session.close()
+
+
+@pytest.fixture
+def ws_client(inventory, backend, ws_db_runner):
     from e2epool.main import app
 
     with patch("e2epool.main.reconcile_on_startup"):
