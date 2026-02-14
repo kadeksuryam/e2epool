@@ -25,7 +25,7 @@ def do_finalize(self, checkpoint_name: str):
     runner_id = None
     paused = False
     ci_adapter = None
-    gitlab_runner_id = None
+    ci_runner_id = None
 
     try:
         checkpoint = (
@@ -68,15 +68,15 @@ def do_finalize(self, checkpoint_name: str):
 
         backend = get_backend(runner)
         ci_adapter = get_ci_adapter(runner)
-        gitlab_runner_id = runner.gitlab_runner_id
+        ci_runner_id = runner.ci_runner_id
         started = datetime.datetime.utcnow()
         result = "ok"
 
         try:
             # Always reset: pause -> rollback -> check ready -> unpause
             # Ensures every job starts with a clean VM state.
-            if gitlab_runner_id:
-                ci_adapter.pause_runner(gitlab_runner_id)
+            if ci_runner_id:
+                ci_adapter.pause_runner(ci_runner_id)
                 paused = True
 
             try:
@@ -86,7 +86,7 @@ def do_finalize(self, checkpoint_name: str):
             finally:
                 if paused:
                     try:
-                        ci_adapter.unpause_runner(gitlab_runner_id)
+                        ci_adapter.unpause_runner(ci_runner_id)
                     except Exception:
                         logger.exception(
                             "Failed to unpause runner after reset",
@@ -130,9 +130,9 @@ def do_finalize(self, checkpoint_name: str):
         raise
     finally:
         # Last-resort unpause guarantee
-        if paused and ci_adapter and gitlab_runner_id:
+        if paused and ci_adapter and ci_runner_id:
             try:
-                ci_adapter.unpause_runner(gitlab_runner_id)
+                ci_adapter.unpause_runner(ci_runner_id)
             except Exception:
                 logger.exception("Last-resort unpause failed", runner_id=runner_id)
         if locked and runner_id:

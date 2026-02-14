@@ -29,7 +29,7 @@ class RunnerConfig:
     gitlab_url: str | None = None
     gitlab_token: str | None = None
     gitlab_project_id: int | None = None
-    gitlab_runner_id: int | None = None
+    ci_runner_id: int | None = None
 
     # Common
     tags: list[str] = field(default_factory=list)
@@ -91,6 +91,10 @@ def load_inventory(path: str | Path) -> Inventory:
                     f"Runner '{runner_id}' with proxmox backend is missing "
                     f"required fields: {', '.join(missing)}"
                 )
+
+        # Backward compat: map old gitlab_runner_id to ci_runner_id
+        if "gitlab_runner_id" in runner_data and "ci_runner_id" not in runner_data:
+            runner_data["ci_runner_id"] = runner_data.pop("gitlab_runner_id")
 
         filtered = {k: v for k, v in runner_data.items() if k in known_fields}
         runners[runner_id] = RunnerConfig(**filtered)

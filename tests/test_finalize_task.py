@@ -26,7 +26,7 @@ class TestDoFinalize:
         self.mock_runner = MagicMock()
         self.mock_runner.runner_id = "runner-123"
         self.mock_runner.cleanup_cmd = None
-        self.mock_runner.gitlab_runner_id = 42
+        self.mock_runner.ci_runner_id = 42
 
         self.mock_session = MagicMock()
         self.mock_query = self.mock_session.query.return_value
@@ -171,7 +171,7 @@ class TestDoFinalize:
     @patch("e2epool.tasks.finalize.get_backend")
     @patch("e2epool.tasks.finalize.get_inventory")
     @patch("e2epool.tasks.finalize.create_session")
-    def test_finalize_no_gitlab_runner_id_skips_pause(
+    def test_finalize_no_ci_runner_id_skips_pause(
         self,
         mock_create_session,
         mock_get_inventory,
@@ -180,11 +180,11 @@ class TestDoFinalize:
         mock_acquire_lock,
         mock_release_lock,
     ):
-        """Test that runner without gitlab_runner_id skips pause/unpause."""
+        """Test that runner without ci_runner_id skips pause/unpause."""
         from e2epool.tasks.finalize import do_finalize
 
         self.mock_checkpoint.finalize_status = "success"
-        self.mock_runner.gitlab_runner_id = None
+        self.mock_runner.ci_runner_id = None
         mock_create_session.return_value = self.mock_session
         mock_get_inventory.return_value = self.mock_inventory
         mock_get_backend.return_value = self.mock_backend

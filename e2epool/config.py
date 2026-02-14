@@ -45,6 +45,17 @@ class Settings(BaseSettings):
     # Internal API base URL (for agent RPC from Celery workers)
     api_base_url: str = "http://127.0.0.1:8080"
 
+    # CI adapter (global, used for pause/unpause + poller fallback)
+    gitlab_url: str | None = None
+    gitlab_token: str | None = None
+
+    # Webhook secrets
+    gitlab_webhook_secret: str | None = None
+    github_webhook_secret: str | None = None
+
+    # Poller toggle (disable when webhooks are configured)
+    poller_enabled: bool = True
+
     # Batch processing
     query_batch_size: int = 200
 

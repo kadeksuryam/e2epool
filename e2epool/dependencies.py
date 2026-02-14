@@ -47,6 +47,14 @@ _ci_adapter_factories: dict[str, type] = {
 
 
 def get_ci_adapter(runner: RunnerConfig) -> CIAdapterProtocol:
+    # Global config takes priority
+    if settings.gitlab_url and settings.gitlab_token:
+        return GitLabAdapter(
+            base_url=settings.gitlab_url,
+            token=settings.gitlab_token,
+        )
+
+    # Fall back to per-runner config (backward compat)
     factory = _ci_adapter_factories.get(runner.ci_adapter)
     if factory is None:
         raise ValueError(f"Unknown CI adapter: {runner.ci_adapter}")

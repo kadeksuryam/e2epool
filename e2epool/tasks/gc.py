@@ -55,7 +55,7 @@ def gc_stale_checkpoints():
                 locked = False
                 paused = False
                 ci_adapter = None
-                gitlab_runner_id = None
+                ci_runner_id = None
                 try:
                     locked = acquire_lock(db, checkpoint.runner_id)
                     if not locked:
@@ -78,13 +78,13 @@ def gc_stale_checkpoints():
 
                     backend = get_backend(runner)
                     ci_adapter = get_ci_adapter(runner)
-                    gitlab_runner_id = runner.gitlab_runner_id
+                    ci_runner_id = runner.ci_runner_id
                     started = datetime.datetime.utcnow()
                     result = "ok"
 
                     try:
-                        if gitlab_runner_id:
-                            ci_adapter.pause_runner(gitlab_runner_id)
+                        if ci_runner_id:
+                            ci_adapter.pause_runner(ci_runner_id)
                             paused = True
 
                         try:
@@ -93,7 +93,7 @@ def gc_stale_checkpoints():
                         finally:
                             if paused:
                                 try:
-                                    ci_adapter.unpause_runner(gitlab_runner_id)
+                                    ci_adapter.unpause_runner(ci_runner_id)
                                 except Exception:
                                     logger.exception(
                                         "GC: failed to unpause runner",
@@ -136,9 +136,9 @@ def gc_stale_checkpoints():
                     )
                 finally:
                     # Last-resort unpause guarantee
-                    if paused and ci_adapter and gitlab_runner_id:
+                    if paused and ci_adapter and ci_runner_id:
                         try:
-                            ci_adapter.unpause_runner(gitlab_runner_id)
+                            ci_adapter.unpause_runner(ci_runner_id)
                         except Exception:
                             logger.exception(
                                 "GC: last-resort unpause failed",

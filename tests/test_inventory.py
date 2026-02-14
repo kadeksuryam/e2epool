@@ -21,7 +21,7 @@ class TestRunnerConfig:
             proxmox_vmid=100,
             gitlab_url="https://gitlab.example.com",
             gitlab_token="glpat-test",
-            gitlab_runner_id=42,
+            ci_runner_id=42,
             tags=["e2e", "proxmox"],
         )
 
@@ -37,7 +37,7 @@ class TestRunnerConfig:
         assert config.proxmox_vmid == 100
         assert config.gitlab_url == "https://gitlab.example.com"
         assert config.gitlab_token == "glpat-test"
-        assert config.gitlab_runner_id == 42
+        assert config.ci_runner_id == 42
         assert config.tags == ["e2e", "proxmox"]
 
     def test_runner_config_bare_metal(self):
@@ -214,7 +214,7 @@ runners:
         assert runner.cleanup_cmd == "sudo /opt/e2e/cleanup.sh"
         assert runner.gitlab_url == "https://gitlab.example.com"
         assert runner.gitlab_token == "glpat-xxxxxxxxxxxxxxxxxxxx"
-        assert runner.gitlab_runner_id == 42
+        assert runner.ci_runner_id == 42
         assert runner.tags == ["e2e", "proxmox"]
 
     def test_load_inventory_bare_metal_runner(self, tmp_path):
@@ -254,7 +254,7 @@ runners:
         assert runner.readiness_cmd == "/opt/e2e/check-ready.sh"
         assert runner.gitlab_url == "https://gitlab.example.com"
         assert runner.gitlab_token == "glpat-xxxxxxxxxxxxxxxxxxxx"
-        assert runner.gitlab_runner_id == 43
+        assert runner.ci_runner_id == 43
         assert runner.tags == ["e2e", "bare-metal", "mobile"]
 
     def test_load_inventory_multiple_runners(self, tmp_path):

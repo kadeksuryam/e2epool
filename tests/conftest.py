@@ -90,7 +90,7 @@ def _make_runner(
         "proxmox_vmid": 100,
         "gitlab_url": "https://gitlab.example.com",
         "gitlab_token": "glpat-test",
-        "gitlab_runner_id": 42,
+        "ci_runner_id": 42,
     }
     if backend == "bare_metal":
         defaults.update(

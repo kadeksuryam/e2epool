@@ -19,6 +19,9 @@ logger = structlog.get_logger()
     time_limit=settings.poller_hard_time_limit,
 )
 def poll_active_checkpoints():
+    if not settings.poller_enabled:
+        return
+
     db = create_session()
     inventory = get_inventory()
 
