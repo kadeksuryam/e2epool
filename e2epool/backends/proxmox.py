@@ -25,7 +25,7 @@ class ProxmoxBackend:
         vm.snapshot(name).rollback.create()
 
         vm.status.start.create()
-        self._wait_for_status(vm, "running")
+        self._wait_for_status(vm, "running", timeout=180)
 
         # Wait for agent to reconnect after VM boot
         wait_for_agent(runner.runner_id)
