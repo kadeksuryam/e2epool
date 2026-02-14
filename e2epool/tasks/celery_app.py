@@ -29,4 +29,14 @@ celery_app.conf.update(
     },
 )
 
-celery_app.autodiscover_tasks(["e2epool.tasks"])
+celery_app.autodiscover_tasks(
+    ["e2epool.tasks"],
+    related_name=None,
+    force=True,
+)
+celery_app.conf.include = [
+    "e2epool.tasks.finalize",
+    "e2epool.tasks.poller",
+    "e2epool.tasks.gc",
+    "e2epool.tasks.reconcile_task",
+]
