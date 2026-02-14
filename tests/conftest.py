@@ -81,15 +81,12 @@ def _make_runner(
         "runner_id": runner_id,
         "backend": backend,
         "token": token,
-        "ci_adapter": "gitlab",
         "proxmox_host": "10.0.0.10",
         "proxmox_user": "root@pam",
         "proxmox_token_name": "e2epool",
         "proxmox_token_value": "test-token",
         "proxmox_node": "pve1",
         "proxmox_vmid": 100,
-        "gitlab_url": "https://gitlab.example.com",
-        "gitlab_token": "glpat-test",
         "ci_runner_id": 42,
     }
     if backend == "bare_metal":

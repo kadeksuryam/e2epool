@@ -67,7 +67,7 @@ def do_finalize(self, checkpoint_name: str):
             return
 
         backend = get_backend(runner)
-        ci_adapter = get_ci_adapter(runner)
+        ci_adapter = get_ci_adapter()
         ci_runner_id = runner.ci_runner_id
         started = datetime.datetime.utcnow()
         result = "ok"

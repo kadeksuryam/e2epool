@@ -51,7 +51,7 @@ def poll_active_checkpoints():
                     continue
 
                 try:
-                    ci_adapter = get_ci_adapter(runner)
+                    ci_adapter = get_ci_adapter()
                     status = ci_adapter.get_job_status(checkpoint.job_id)
                 except Exception:
                     logger.exception(

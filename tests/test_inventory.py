@@ -12,15 +12,12 @@ class TestRunnerConfig:
             runner_id="runner-01",
             backend="proxmox",
             token="secret",
-            ci_adapter="gitlab",
             proxmox_host="10.0.0.10",
             proxmox_user="root@pam",
             proxmox_token_name="e2epool",
             proxmox_token_value="token-value",
             proxmox_node="pve1",
             proxmox_vmid=100,
-            gitlab_url="https://gitlab.example.com",
-            gitlab_token="glpat-test",
             ci_runner_id=42,
             tags=["e2e", "proxmox"],
         )
@@ -28,15 +25,12 @@ class TestRunnerConfig:
         assert config.runner_id == "runner-01"
         assert config.backend == "proxmox"
         assert config.token == "secret"
-        assert config.ci_adapter == "gitlab"
         assert config.proxmox_host == "10.0.0.10"
         assert config.proxmox_user == "root@pam"
         assert config.proxmox_token_name == "e2epool"
         assert config.proxmox_token_value == "token-value"
         assert config.proxmox_node == "pve1"
         assert config.proxmox_vmid == 100
-        assert config.gitlab_url == "https://gitlab.example.com"
-        assert config.gitlab_token == "glpat-test"
         assert config.ci_runner_id == 42
         assert config.tags == ["e2e", "proxmox"]
 
@@ -59,16 +53,6 @@ class TestRunnerConfig:
         assert config.cleanup_cmd == "sudo /opt/e2e/cleanup.sh"
         assert config.readiness_cmd == "/opt/e2e/check-ready.sh"
         assert config.tags == ["e2e", "bare-metal"]
-
-    def test_runner_config_default_ci_adapter(self):
-        """Verify ci_adapter defaults to gitlab."""
-        config = RunnerConfig(
-            runner_id="runner-01",
-            backend="proxmox",
-            token="secret",
-        )
-
-        assert config.ci_adapter == "gitlab"
 
     def test_runner_config_default_tags(self):
         """Verify tags defaults to empty list."""
@@ -177,7 +161,6 @@ runners:
   - runner_id: runner-proxmox-01
     backend: proxmox
     token: secret-token-proxmox-01
-    ci_adapter: gitlab
     proxmox_host: "10.0.0.10"
     proxmox_user: "root@pam"
     proxmox_token_name: "e2epool"
@@ -185,9 +168,7 @@ runners:
     proxmox_node: "pve1"
     proxmox_vmid: 100
     cleanup_cmd: "sudo /opt/e2e/cleanup.sh"
-    gitlab_url: "https://gitlab.example.com"
-    gitlab_token: "glpat-xxxxxxxxxxxxxxxxxxxx"
-    gitlab_runner_id: 42
+    ci_runner_id: 42
     tags:
       - e2e
       - proxmox
@@ -204,7 +185,6 @@ runners:
         assert runner.runner_id == "runner-proxmox-01"
         assert runner.backend == "proxmox"
         assert runner.token == "secret-token-proxmox-01"
-        assert runner.ci_adapter == "gitlab"
         assert runner.proxmox_host == "10.0.0.10"
         assert runner.proxmox_user == "root@pam"
         assert runner.proxmox_token_name == "e2epool"
@@ -212,8 +192,6 @@ runners:
         assert runner.proxmox_node == "pve1"
         assert runner.proxmox_vmid == 100
         assert runner.cleanup_cmd == "sudo /opt/e2e/cleanup.sh"
-        assert runner.gitlab_url == "https://gitlab.example.com"
-        assert runner.gitlab_token == "glpat-xxxxxxxxxxxxxxxxxxxx"
         assert runner.ci_runner_id == 42
         assert runner.tags == ["e2e", "proxmox"]
 
@@ -224,13 +202,10 @@ runners:
   - runner_id: runner-bare-01
     backend: bare_metal
     token: secret-token-bare-01
-    ci_adapter: gitlab
     reset_cmd: "sudo /opt/e2e/reset.sh"
     cleanup_cmd: "sudo /opt/e2e/cleanup.sh"
     readiness_cmd: "/opt/e2e/check-ready.sh"
-    gitlab_url: "https://gitlab.example.com"
-    gitlab_token: "glpat-xxxxxxxxxxxxxxxxxxxx"
-    gitlab_runner_id: 43
+    ci_runner_id: 43
     tags:
       - e2e
       - bare-metal
@@ -248,12 +223,9 @@ runners:
         assert runner.runner_id == "runner-bare-01"
         assert runner.backend == "bare_metal"
         assert runner.token == "secret-token-bare-01"
-        assert runner.ci_adapter == "gitlab"
         assert runner.reset_cmd == "sudo /opt/e2e/reset.sh"
         assert runner.cleanup_cmd == "sudo /opt/e2e/cleanup.sh"
         assert runner.readiness_cmd == "/opt/e2e/check-ready.sh"
-        assert runner.gitlab_url == "https://gitlab.example.com"
-        assert runner.gitlab_token == "glpat-xxxxxxxxxxxxxxxxxxxx"
         assert runner.ci_runner_id == 43
         assert runner.tags == ["e2e", "bare-metal", "mobile"]
 
@@ -445,11 +417,9 @@ runners:
         assert runner.runner_id == "runner-minimal"
         assert runner.backend == "bare_metal"
         assert runner.token == "secret"
-        assert runner.ci_adapter == "gitlab"  # default
         assert runner.tags == []  # default
         assert runner.proxmox_host is None
         assert runner.cleanup_cmd is None
-        assert runner.gitlab_url is None
 
     def test_proxmox_runner_missing_required_field_raises(self, tmp_path):
         """Verify ValueError when proxmox runner is missing required fields."""
@@ -476,7 +446,7 @@ runners:
         assert "proxmox_vmid" in error_msg
 
     def test_load_inventory_ignores_unknown_fields(self, tmp_path):
-        """Verify old inventory files with unknown fields (e.g. SSH) still load."""
+        """Verify inventory files with unknown fields still load."""
         yaml_content = """
 runners:
   - runner_id: runner-01

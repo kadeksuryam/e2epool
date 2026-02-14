@@ -46,26 +46,15 @@ _ci_adapter_factories: dict[str, type] = {
 }
 
 
-def get_ci_adapter(runner: RunnerConfig) -> CIAdapterProtocol:
-    # Global config takes priority
-    if settings.gitlab_url and settings.gitlab_token:
-        return GitLabAdapter(
-            base_url=settings.gitlab_url,
-            token=settings.gitlab_token,
-        )
-
-    # Fall back to per-runner config (backward compat)
-    factory = _ci_adapter_factories.get(runner.ci_adapter)
+def get_ci_adapter() -> CIAdapterProtocol:
+    """Build a CI adapter from global config."""
+    factory = _ci_adapter_factories.get(settings.ci_provider)
     if factory is None:
-        raise ValueError(f"Unknown CI adapter: {runner.ci_adapter}")
-    kwargs = {
-        "base_url": getattr(runner, f"{runner.ci_adapter}_url", "") or "",
-        "token": getattr(runner, f"{runner.ci_adapter}_token", "") or "",
-    }
-    project_id = getattr(runner, f"{runner.ci_adapter}_project_id", None)
-    if project_id is not None:
-        kwargs["project_id"] = project_id
-    return factory(**kwargs)
+        raise ValueError(f"Unknown CI provider: {settings.ci_provider}")
+    return factory(
+        base_url=settings.ci_url or "",
+        token=settings.ci_token or "",
+    )
 
 
 def register_ci_adapter(name: str, factory: type) -> None:

@@ -10,7 +10,6 @@ class RunnerConfig:
     runner_id: str
     backend: str  # "proxmox" or "bare_metal"
     token: str
-    ci_adapter: str = "gitlab"
 
     # Proxmox-specific
     proxmox_host: str | None = None
@@ -25,10 +24,7 @@ class RunnerConfig:
     cleanup_cmd: str | None = None
     readiness_cmd: str | None = None
 
-    # CI adapter config
-    gitlab_url: str | None = None
-    gitlab_token: str | None = None
-    gitlab_project_id: int | None = None
+    # CI runner ID for pause/unpause
     ci_runner_id: int | None = None
 
     # Common
@@ -91,10 +87,6 @@ def load_inventory(path: str | Path) -> Inventory:
                     f"Runner '{runner_id}' with proxmox backend is missing "
                     f"required fields: {', '.join(missing)}"
                 )
-
-        # Backward compat: map old gitlab_runner_id to ci_runner_id
-        if "gitlab_runner_id" in runner_data and "ci_runner_id" not in runner_data:
-            runner_data["ci_runner_id"] = runner_data.pop("gitlab_runner_id")
 
         filtered = {k: v for k, v in runner_data.items() if k in known_fields}
         runners[runner_id] = RunnerConfig(**filtered)

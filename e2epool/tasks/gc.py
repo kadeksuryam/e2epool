@@ -77,7 +77,7 @@ def gc_stale_checkpoints():
                         continue
 
                     backend = get_backend(runner)
-                    ci_adapter = get_ci_adapter(runner)
+                    ci_adapter = get_ci_adapter()
                     ci_runner_id = runner.ci_runner_id
                     started = datetime.datetime.utcnow()
                     result = "ok"
