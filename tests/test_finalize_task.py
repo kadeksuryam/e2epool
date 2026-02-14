@@ -107,7 +107,7 @@ class TestDoFinalize:
     @patch("e2epool.tasks.finalize.get_backend")
     @patch("e2epool.tasks.finalize.get_inventory")
     @patch("e2epool.tasks.finalize.create_session")
-    def test_finalize_success_deletes_checkpoint(
+    def test_finalize_success_resets_checkpoint(
         self,
         mock_create_session,
         mock_get_inventory,
@@ -116,7 +116,7 @@ class TestDoFinalize:
         mock_acquire_lock,
         mock_release_lock,
     ):
-        """Test that success status without cleanup_cmd deletes checkpoint."""
+        """Test that success status triggers reset (always-rollback behavior)."""
         from e2epool.tasks.finalize import do_finalize
 
         self.mock_checkpoint.finalize_status = "success"
@@ -128,10 +128,11 @@ class TestDoFinalize:
 
         do_finalize("test-checkpoint")
 
-        self.mock_backend.cleanup.assert_called_once_with(
+        self.mock_backend.reset.assert_called_once_with(
             self.mock_runner, self.mock_checkpoint.name
         )
-        assert self.mock_checkpoint.state == "deleted"
+        self.mock_backend.check_ready.assert_called_once_with(self.mock_runner)
+        assert self.mock_checkpoint.state == "reset"
         self.mock_session.commit.assert_called()
 
     @patch("e2epool.tasks.finalize.release_lock")
@@ -140,7 +141,7 @@ class TestDoFinalize:
     @patch("e2epool.tasks.finalize.get_backend")
     @patch("e2epool.tasks.finalize.get_inventory")
     @patch("e2epool.tasks.finalize.create_session")
-    def test_finalize_success_with_cleanup_pauses(
+    def test_finalize_success_pauses_and_unpauses_runner(
         self,
         mock_create_session,
         mock_get_inventory,
@@ -149,11 +150,10 @@ class TestDoFinalize:
         mock_acquire_lock,
         mock_release_lock,
     ):
-        """Test that success with cleanup_cmd pauses and unpauses runner."""
+        """Test that success status pauses and unpauses the runner."""
         from e2epool.tasks.finalize import do_finalize
 
         self.mock_checkpoint.finalize_status = "success"
-        self.mock_runner.cleanup_cmd = "cleanup.sh"
         mock_create_session.return_value = self.mock_session
         mock_get_inventory.return_value = self.mock_inventory
         mock_get_backend.return_value = self.mock_backend
@@ -162,11 +162,8 @@ class TestDoFinalize:
         do_finalize("test-checkpoint")
 
         self.mock_ci_adapter.pause_runner.assert_called_once_with(42)
-        self.mock_backend.cleanup.assert_called_once_with(
-            self.mock_runner, self.mock_checkpoint.name
-        )
         self.mock_ci_adapter.unpause_runner.assert_called_once_with(42)
-        assert self.mock_checkpoint.state == "deleted"
+        assert self.mock_checkpoint.state == "reset"
 
     @patch("e2epool.tasks.finalize.release_lock")
     @patch("e2epool.tasks.finalize.acquire_lock", return_value=True)
@@ -174,7 +171,7 @@ class TestDoFinalize:
     @patch("e2epool.tasks.finalize.get_backend")
     @patch("e2epool.tasks.finalize.get_inventory")
     @patch("e2epool.tasks.finalize.create_session")
-    def test_finalize_success_no_cleanup_no_pause(
+    def test_finalize_no_gitlab_runner_id_skips_pause(
         self,
         mock_create_session,
         mock_get_inventory,
@@ -183,11 +180,11 @@ class TestDoFinalize:
         mock_acquire_lock,
         mock_release_lock,
     ):
-        """Test that success without cleanup_cmd does not pause runner."""
+        """Test that runner without gitlab_runner_id skips pause/unpause."""
         from e2epool.tasks.finalize import do_finalize
 
         self.mock_checkpoint.finalize_status = "success"
-        self.mock_runner.cleanup_cmd = None
+        self.mock_runner.gitlab_runner_id = None
         mock_create_session.return_value = self.mock_session
         mock_get_inventory.return_value = self.mock_inventory
         mock_get_backend.return_value = self.mock_backend
@@ -197,7 +194,8 @@ class TestDoFinalize:
 
         self.mock_ci_adapter.pause_runner.assert_not_called()
         self.mock_ci_adapter.unpause_runner.assert_not_called()
-        self.mock_backend.cleanup.assert_called_once()
+        self.mock_backend.reset.assert_called_once()
+        assert self.mock_checkpoint.state == "reset"
 
     @patch("e2epool.tasks.finalize.release_lock")
     @patch("e2epool.tasks.finalize.acquire_lock", return_value=True)
@@ -397,7 +395,7 @@ class TestDoFinalize:
     @patch("e2epool.tasks.finalize.get_backend")
     @patch("e2epool.tasks.finalize.get_inventory")
     @patch("e2epool.tasks.finalize.create_session")
-    def test_finalize_unpauses_on_cleanup_failure(
+    def test_finalize_unpauses_on_reset_failure_success_status(
         self,
         mock_create_session,
         mock_get_inventory,
@@ -406,19 +404,18 @@ class TestDoFinalize:
         mock_acquire_lock,
         mock_release_lock,
     ):
-        """unpause_runner is called even when cleanup raises an exception."""
+        """unpause_runner is called even when reset raises on success status."""
         from e2epool.tasks.finalize import do_finalize
 
         self.mock_checkpoint.finalize_status = "success"
-        self.mock_runner.cleanup_cmd = "cleanup.sh"
         mock_create_session.return_value = self.mock_session
         mock_get_inventory.return_value = self.mock_inventory
         mock_get_backend.return_value = self.mock_backend
         mock_get_ci_adapter.return_value = self.mock_ci_adapter
 
-        self.mock_backend.cleanup.side_effect = Exception("Cleanup failed")
+        self.mock_backend.reset.side_effect = Exception("Reset failed")
 
-        with pytest.raises(Exception, match="Cleanup failed"):
+        with pytest.raises(Exception, match="Reset failed"):
             do_finalize("test-checkpoint")
 
         self.mock_ci_adapter.pause_runner.assert_called_once_with(42)

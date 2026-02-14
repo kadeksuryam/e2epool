@@ -53,7 +53,9 @@ def test_reset_stops_rollbacks_starts_deletes(mock_proxmox_api, mock_wait, mock_
 
     backend = ProxmoxBackend()
 
-    with patch.object(backend, "_wait_for_status"):
+    with patch.object(backend, "_wait_for_status"), patch.object(
+        backend, "_wait_for_task"
+    ):
         backend.reset(mock_runner, "test-checkpoint")
 
     mock_stop.create.assert_called_once()
@@ -87,7 +89,9 @@ def test_reset_with_cleanup_runs_agent_cmd(
 
     backend = ProxmoxBackend()
 
-    with patch.object(backend, "_wait_for_status"):
+    with patch.object(backend, "_wait_for_status"), patch.object(
+        backend, "_wait_for_task"
+    ):
         backend.reset(mock_runner, "test-checkpoint")
 
     mock_run.assert_called_once_with(mock_runner.runner_id, "cleanup.sh")

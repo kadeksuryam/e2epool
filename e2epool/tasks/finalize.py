@@ -73,46 +73,26 @@ def do_finalize(self, checkpoint_name: str):
         result = "ok"
 
         try:
-            if checkpoint.finalize_status in ("failure", "canceled"):
-                # Failure path: pause -> reset -> check ready -> unpause
-                if gitlab_runner_id:
-                    ci_adapter.pause_runner(gitlab_runner_id)
-                    paused = True
+            # Always reset: pause -> rollback -> check ready -> unpause
+            # Ensures every job starts with a clean VM state.
+            if gitlab_runner_id:
+                ci_adapter.pause_runner(gitlab_runner_id)
+                paused = True
 
-                try:
-                    backend.reset(runner, checkpoint.name)
-                    backend.check_ready(runner)
-                    checkpoint.state = "reset"
-                finally:
-                    if paused:
-                        try:
-                            ci_adapter.unpause_runner(gitlab_runner_id)
-                        except Exception:
-                            logger.exception(
-                                "Failed to unpause runner after reset",
-                                runner_id=runner_id,
-                            )
-                        paused = False
-
-            elif checkpoint.finalize_status == "success":
-                # Success path: cleanup (may pause if cleanup_cmd)
-                if runner.cleanup_cmd and gitlab_runner_id:
-                    ci_adapter.pause_runner(gitlab_runner_id)
-                    paused = True
-
-                try:
-                    backend.cleanup(runner, checkpoint.name)
-                    checkpoint.state = "deleted"
-                finally:
-                    if paused:
-                        try:
-                            ci_adapter.unpause_runner(gitlab_runner_id)
-                        except Exception:
-                            logger.exception(
-                                "Failed to unpause runner after cleanup",
-                                runner_id=runner_id,
-                            )
-                        paused = False
+            try:
+                backend.reset(runner, checkpoint.name)
+                backend.check_ready(runner)
+                checkpoint.state = "reset"
+            finally:
+                if paused:
+                    try:
+                        ci_adapter.unpause_runner(gitlab_runner_id)
+                    except Exception:
+                        logger.exception(
+                            "Failed to unpause runner after reset",
+                            runner_id=runner_id,
+                        )
+                    paused = False
         except Exception:
             result = "error"
             raise
