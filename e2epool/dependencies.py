@@ -50,10 +50,14 @@ def get_ci_adapter(runner: RunnerConfig) -> CIAdapterProtocol:
     factory = _ci_adapter_factories.get(runner.ci_adapter)
     if factory is None:
         raise ValueError(f"Unknown CI adapter: {runner.ci_adapter}")
-    return factory(
-        base_url=getattr(runner, f"{runner.ci_adapter}_url", "") or "",
-        token=getattr(runner, f"{runner.ci_adapter}_token", "") or "",
-    )
+    kwargs = {
+        "base_url": getattr(runner, f"{runner.ci_adapter}_url", "") or "",
+        "token": getattr(runner, f"{runner.ci_adapter}_token", "") or "",
+    }
+    project_id = getattr(runner, f"{runner.ci_adapter}_project_id", None)
+    if project_id is not None:
+        kwargs["project_id"] = project_id
+    return factory(**kwargs)
 
 
 def register_ci_adapter(name: str, factory: type) -> None:

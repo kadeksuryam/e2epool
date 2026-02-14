@@ -28,6 +28,7 @@ class RunnerConfig:
     # CI adapter config
     gitlab_url: str | None = None
     gitlab_token: str | None = None
+    gitlab_project_id: int | None = None
     gitlab_runner_id: int | None = None
 
     # Common
