@@ -11,6 +11,7 @@ COPY e2epool/__init__.py e2epool/__init__.py
 RUN pip install --no-cache-dir .
 
 COPY . .
+RUN pip install --no-cache-dir --no-deps .
 
 EXPOSE 8080
 
