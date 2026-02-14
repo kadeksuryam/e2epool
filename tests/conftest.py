@@ -87,7 +87,7 @@ def _make_runner(
         "proxmox_token_value": "test-token",
         "proxmox_node": "pve1",
         "proxmox_vmid": 100,
-        "ci_runner_id": 42,
+        "gitlab_runner_id": 42,
     }
     if backend == "bare_metal":
         defaults.update(

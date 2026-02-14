@@ -25,7 +25,7 @@ class RunnerConfig:
     readiness_cmd: str | None = None
 
     # CI runner ID for pause/unpause
-    ci_runner_id: int | None = None
+    gitlab_runner_id: int | None = None
 
     # Common
     tags: list[str] = field(default_factory=list)

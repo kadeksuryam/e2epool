@@ -9,7 +9,7 @@ runners:
     proxmox_node: "pve1"
     proxmox_vmid: 100
     cleanup_cmd: "sudo /opt/e2e/cleanup.sh"
-    ci_runner_id: 42
+    gitlab_runner_id: 42
     tags:
       - e2e
       - proxmox
@@ -20,7 +20,7 @@ runners:
     reset_cmd: "sudo /opt/e2e/reset.sh"
     cleanup_cmd: "sudo /opt/e2e/cleanup.sh"
     readiness_cmd: "/opt/e2e/check-ready.sh"
-    ci_runner_id: 43
+    gitlab_runner_id: 43
     tags:
       - e2e
       - bare-metal

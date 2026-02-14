@@ -18,7 +18,7 @@ class TestRunnerConfig:
             proxmox_token_value="token-value",
             proxmox_node="pve1",
             proxmox_vmid=100,
-            ci_runner_id=42,
+            gitlab_runner_id=42,
             tags=["e2e", "proxmox"],
         )
 
@@ -31,7 +31,7 @@ class TestRunnerConfig:
         assert config.proxmox_token_value == "token-value"
         assert config.proxmox_node == "pve1"
         assert config.proxmox_vmid == 100
-        assert config.ci_runner_id == 42
+        assert config.gitlab_runner_id == 42
         assert config.tags == ["e2e", "proxmox"]
 
     def test_runner_config_bare_metal(self):
@@ -168,7 +168,7 @@ runners:
     proxmox_node: "pve1"
     proxmox_vmid: 100
     cleanup_cmd: "sudo /opt/e2e/cleanup.sh"
-    ci_runner_id: 42
+    gitlab_runner_id: 42
     tags:
       - e2e
       - proxmox
@@ -192,7 +192,7 @@ runners:
         assert runner.proxmox_node == "pve1"
         assert runner.proxmox_vmid == 100
         assert runner.cleanup_cmd == "sudo /opt/e2e/cleanup.sh"
-        assert runner.ci_runner_id == 42
+        assert runner.gitlab_runner_id == 42
         assert runner.tags == ["e2e", "proxmox"]
 
     def test_load_inventory_bare_metal_runner(self, tmp_path):
@@ -205,7 +205,7 @@ runners:
     reset_cmd: "sudo /opt/e2e/reset.sh"
     cleanup_cmd: "sudo /opt/e2e/cleanup.sh"
     readiness_cmd: "/opt/e2e/check-ready.sh"
-    ci_runner_id: 43
+    gitlab_runner_id: 43
     tags:
       - e2e
       - bare-metal
@@ -226,7 +226,7 @@ runners:
         assert runner.reset_cmd == "sudo /opt/e2e/reset.sh"
         assert runner.cleanup_cmd == "sudo /opt/e2e/cleanup.sh"
         assert runner.readiness_cmd == "/opt/e2e/check-ready.sh"
-        assert runner.ci_runner_id == 43
+        assert runner.gitlab_runner_id == 43
         assert runner.tags == ["e2e", "bare-metal", "mobile"]
 
     def test_load_inventory_multiple_runners(self, tmp_path):

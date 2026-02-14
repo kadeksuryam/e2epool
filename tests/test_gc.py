@@ -33,7 +33,7 @@ class TestGcStaleCheckpoints:
         self.mock_runner = MagicMock()
         self.mock_runner.runner_id = "runner-123"
         self.mock_runner.backend = "proxmox"
-        self.mock_runner.ci_runner_id = 42
+        self.mock_runner.gitlab_runner_id = 42
         self.mock_inventory.get_runner.return_value = self.mock_runner
         self.mock_backend = MagicMock()
         self.mock_ci_adapter = MagicMock()
