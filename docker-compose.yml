@@ -1,12 +1,13 @@
 services:
   db:
     image: postgres:14
+    restart: always
     environment:
       POSTGRES_DB: e2epool
       POSTGRES_USER: e2epool
-      POSTGRES_PASSWORD: e2epool
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
     ports:
-      - "5434:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -17,8 +18,9 @@ services:
 
   redis:
     image: redis:7
+    restart: always
     ports:
-      - "6381:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -27,42 +29,52 @@ services:
 
   app:
     build: .
-    command: uvicorn e2epool.main:app --host 0.0.0.0 --port 8080 --reload
+    restart: always
+    command: uvicorn e2epool.main:app --host 0.0.0.0 --port 8080
     ports:
       - "8080:8080"
     env_file: .env
     environment:
-      E2EPOOL_DATABASE_URL: postgresql://e2epool:e2epool@db:5432/e2epool
+      E2EPOOL_DATABASE_URL: "postgresql://e2epool:${DB_PASSWORD}@db:5432/e2epool"
       E2EPOOL_REDIS_URL: redis://redis:6379/0
+      E2EPOOL_API_BASE_URL: http://app:8080
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - .:/app
+      - ./inventory.yml:/app/inventory.yml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   celery-worker:
     build: .
+    restart: always
     command: celery -A e2epool.tasks.celery_app worker --loglevel=info
     env_file: .env
     environment:
-      E2EPOOL_DATABASE_URL: postgresql://e2epool:e2epool@db:5432/e2epool
+      E2EPOOL_DATABASE_URL: "postgresql://e2epool:${DB_PASSWORD}@db:5432/e2epool"
       E2EPOOL_REDIS_URL: redis://redis:6379/0
+      E2EPOOL_API_BASE_URL: http://app:8080
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - .:/app
+      - ./inventory.yml:/app/inventory.yml:ro
 
   celery-beat:
     build: .
+    restart: always
     command: celery -A e2epool.tasks.celery_app beat --loglevel=info
     env_file: .env
     environment:
-      E2EPOOL_DATABASE_URL: postgresql://e2epool:e2epool@db:5432/e2epool
+      E2EPOOL_DATABASE_URL: "postgresql://e2epool:${DB_PASSWORD}@db:5432/e2epool"
       E2EPOOL_REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
@@ -70,7 +82,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - .:/app
+      - ./inventory.yml:/app/inventory.yml:ro
 
 volumes:
   pgdata:
