@@ -58,8 +58,18 @@ def reconcile_stuck_checkpoints() -> int:
 
 
 def reconcile_on_startup():
-    """Run reconciliation once at controller startup."""
-    enqueued = reconcile_stuck_checkpoints()
+    """Run reconciliation once at controller startup.
+
+    Gracefully handles unmigrated databases (first deploy before alembic runs).
+    """
+    try:
+        enqueued = reconcile_stuck_checkpoints()
+    except Exception:
+        logger.warning(
+            "Reconcile: skipped — database may not be migrated yet. "
+            "Run 'alembic upgrade head' to initialize."
+        )
+        return
     if enqueued:
         logger.info("Reconcile: re-enqueued stuck checkpoints", count=enqueued)
     else:
