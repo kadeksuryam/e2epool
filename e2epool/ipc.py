@@ -70,7 +70,7 @@ class IPCServer:
         path = Path(self.socket_path)
         path.unlink(missing_ok=True)
         self._server = await asyncio.start_unix_server(self._on_connect, path=str(path))
-        path.chmod(0o660)
+        path.chmod(0o666)
 
     async def stop(self) -> None:
         if self._server:
