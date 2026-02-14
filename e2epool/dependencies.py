@@ -47,14 +47,15 @@ _ci_adapter_factories: dict[str, type] = {
 
 
 def get_ci_adapter() -> CIAdapterProtocol:
-    """Build a CI adapter from global config."""
+    """Build a CI adapter from global config.
+
+    Each adapter reads its own provider-specific settings
+    (e.g. gitlab_url/gitlab_token for GitLab).
+    """
     factory = _ci_adapter_factories.get(settings.ci_provider)
     if factory is None:
         raise ValueError(f"Unknown CI provider: {settings.ci_provider}")
-    return factory(
-        base_url=settings.ci_url or "",
-        token=settings.ci_token or "",
-    )
+    return factory()
 
 
 def register_ci_adapter(name: str, factory: type) -> None:

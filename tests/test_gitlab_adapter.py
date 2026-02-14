@@ -10,10 +10,10 @@ from e2epool.ci_adapters.gitlab import GitLabAdapter
 @pytest.fixture
 def adapter():
     """Create a GitLabAdapter instance for testing."""
-    return GitLabAdapter(
-        base_url="https://gitlab.example.com",
-        token="glpat-test-token",
-    )
+    with patch("e2epool.ci_adapters.gitlab.settings") as mock_settings:
+        mock_settings.gitlab_url = "https://gitlab.example.com"
+        mock_settings.gitlab_token = "glpat-test-token"
+        yield GitLabAdapter()
 
 
 class TestGetJobStatus:
@@ -203,10 +203,10 @@ class TestBaseUrlHandling:
 
     def test_base_url_trailing_slash_stripped(self):
         """Test that trailing slash is stripped from base_url."""
-        adapter = GitLabAdapter(
-            base_url="https://gitlab.example.com/",
-            token="test-token",
-        )
+        with patch("e2epool.ci_adapters.gitlab.settings") as mock_settings:
+            mock_settings.gitlab_url = "https://gitlab.example.com/"
+            mock_settings.gitlab_token = "test-token"
+            adapter = GitLabAdapter()
 
         with patch("e2epool.ci_adapters.gitlab.httpx") as mock_httpx:
             mock_resp = MagicMock()
@@ -216,7 +216,6 @@ class TestBaseUrlHandling:
 
             adapter.get_job_status("job-123")
 
-            # Verify no double slash in URL
             call_args = mock_httpx.get.call_args
             called_url = call_args[0][0]
             assert called_url == "https://gitlab.example.com/api/v4/jobs/job-123"
@@ -224,10 +223,10 @@ class TestBaseUrlHandling:
 
     def test_base_url_no_trailing_slash(self):
         """Test that base_url without trailing slash works correctly."""
-        adapter = GitLabAdapter(
-            base_url="https://gitlab.example.com",
-            token="test-token",
-        )
+        with patch("e2epool.ci_adapters.gitlab.settings") as mock_settings:
+            mock_settings.gitlab_url = "https://gitlab.example.com"
+            mock_settings.gitlab_token = "test-token"
+            adapter = GitLabAdapter()
 
         with patch("e2epool.ci_adapters.gitlab.httpx") as mock_httpx:
             mock_resp = MagicMock()
@@ -258,29 +257,3 @@ class TestAuthenticationHeader:
             call_args = mock_httpx.get.call_args
             headers = call_args[1]["headers"]
             assert headers == {"PRIVATE-TOKEN": "glpat-test-token"}
-
-    def test_different_tokens_used(self):
-        """Test that different adapter instances use their own tokens."""
-        adapter1 = GitLabAdapter(
-            base_url="https://gitlab.example.com",
-            token="token-1",
-        )
-        adapter2 = GitLabAdapter(
-            base_url="https://gitlab.example.com",
-            token="token-2",
-        )
-
-        with patch("e2epool.ci_adapters.gitlab.httpx") as mock_httpx:
-            mock_resp = MagicMock()
-            mock_resp.status_code = 200
-            mock_resp.json.return_value = {"status": "running"}
-            mock_httpx.get.return_value = mock_resp
-
-            adapter1.get_job_status("job-1")
-            call1_headers = mock_httpx.get.call_args_list[0][1]["headers"]
-
-            adapter2.get_job_status("job-2")
-            call2_headers = mock_httpx.get.call_args_list[1][1]["headers"]
-
-            assert call1_headers["PRIVATE-TOKEN"] == "token-1"
-            assert call2_headers["PRIVATE-TOKEN"] == "token-2"
