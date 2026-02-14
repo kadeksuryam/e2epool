@@ -17,12 +17,14 @@ class ProxmoxBackend:
     def reset(self, runner: RunnerConfig, name: str) -> None:
         """Stop VM, rollback to snapshot, start VM, delete snapshot."""
         pve = self._get_pve(runner)
-        vm = pve.nodes(runner.proxmox_node).qemu(runner.proxmox_vmid)
+        node = pve.nodes(runner.proxmox_node)
+        vm = node.qemu(runner.proxmox_vmid)
 
         vm.status.stop.create()
         self._wait_for_status(vm, "stopped")
 
-        vm.snapshot(name).rollback.create()
+        upid = vm.snapshot(name).rollback.create()
+        self._wait_for_task(node, upid)
 
         vm.status.start.create()
         self._wait_for_status(vm, "running", timeout=180)
@@ -66,3 +68,17 @@ class ProxmoxBackend:
                 return
             time.sleep(2)
         raise TimeoutError(f"VM did not reach '{target}' within {timeout}s")
+
+    def _wait_for_task(self, node, upid: str, timeout: int = 120) -> None:
+        """Wait for a Proxmox task to complete."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            task = node.tasks(upid).status.get()
+            if task.get("status") == "stopped":
+                if task.get("exitstatus") != "OK":
+                    raise RuntimeError(
+                        f"Proxmox task failed: {task.get('exitstatus')}"
+                    )
+                return
+            time.sleep(2)
+        raise TimeoutError(f"Proxmox task did not complete within {timeout}s")
