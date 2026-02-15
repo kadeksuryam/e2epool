@@ -39,6 +39,7 @@ services:
       E2EPOOL_REDIS_URL: redis://redis:6379/0
       E2EPOOL_API_BASE_URL: http://app:8080
       E2EPOOL_ADMIN_TOKEN: "${ADMIN_TOKEN}"
+      E2EPOOL_GITLAB_WEBHOOK_SECRET: "${GITLAB_WEBHOOK_SECRET}"
     depends_on:
       db:
         condition: service_healthy
