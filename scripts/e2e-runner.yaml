@@ -1,0 +1,38 @@
+#cloud-config
+growpart:
+  mode: auto
+  devices: ['/']
+  ignore_growroot_disabled: false
+resize_rootfs: true
+hostname: ${HOSTNAME}
+users:
+  - default
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    groups: docker
+    ssh_authorized_keys:
+      - ${SSH_KEY}
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - htop
+  - git
+  - ca-certificates
+  - qemu-guest-agent
+  - python3-pip
+  - python3.12-venv
+  - libpq-dev
+runcmd:
+  - systemctl enable qemu-guest-agent
+  - systemctl start qemu-guest-agent
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker ubuntu
+  - usermod -aG docker gitlab-runner
+  - systemctl enable docker
+  - systemctl start docker
+  - curl -fsSL https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh | bash
+  - apt-get install -y gitlab-runner
+  - systemctl enable gitlab-runner
+  - systemctl start gitlab-runner
