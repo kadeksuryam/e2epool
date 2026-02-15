@@ -108,14 +108,14 @@ This design was evaluated against existing solutions:
 * **Single-checkpoint invariant:** at most one active (non-finalized) checkpoint may exist per runner at any time. The controller rejects `POST /checkpoint/create` if one already exists. This prevents conflicting resets.
 * **Concurrent=1 invariant:** each runner **must** be configured with `concurrent = 1` in its CI runner config. Enforced by the single-checkpoint invariant at the controller level.
 * **Asynchronous finalize:** the runner calls `POST /checkpoint/finalize`, the controller persists the intent and returns `202 Accepted` immediately, then executes the reset asynchronously. This avoids the runner destroying itself mid-response (critical for Proxmox VMs where finalize stops the VM).
-* **CI adapter:** a pluggable module the controller uses to interact with the CI system. It provides three operations: `get_job_status(job_id)`, `pause_runner(runner_id)`, and `unpause_runner(runner_id)`. The adapter is configured in the inventory (see section 6.3). Implementing a new CI adapter (e.g., for GitHub Actions) requires no changes to the controller core.
+* **CI adapter:** a pluggable module the controller uses to interact with the CI system. It provides three operations: `get_job_status(job_id)`, `pause_runner(runner_id)`, and `unpause_runner(runner_id)`. The adapter is configured in the inventory (see section 6.2). Implementing a new CI adapter (e.g., for GitHub Actions) requires no changes to the controller core.
 * **Dual job-completion detection:** finalize is triggered by three independent paths: (1) the runner's post-job hook (via `pre_build_script` checkpoint creation in GitLab runner config), (2) the controller's **job status poller** that queries the CI system's API via the CI adapter every 15-30s for jobs with active checkpoints, and (3) GitLab webhook (`POST /webhook/gitlab`) for real-time job completion events. Whichever detects completion first initiates finalize; the others are no-ops (idempotent). The poller path is purely outbound (controller -> CI system), requiring no inbound network exposure; the webhook path is inbound and optional.
 * **Idempotency:** all controller endpoints must be idempotent; repeated finalize calls are safe.
 * **Distributed locking:** per-runner lock (PostgreSQL advisory lock) to prevent concurrent conflicting operations, even across multiple controller instances.
 * **Stateless controller:** each controller instance is stateless — all mutable state (checkpoint records, lock state, operation logs) lives in a **shared PostgreSQL database**. Instances can be started, stopped, or replaced without data loss. This makes the controller deployable anywhere: Proxmox VM, Hetzner Cloud VM, Docker container, Kubernetes pod, bare-metal server — anything with network access to the database, runners, and CI API.
 * **Multi-instance:** multiple controller instances can run simultaneously behind a load balancer (or floating IP / DNS round-robin). There is no leader election. All instances serve the API, run the poller, and execute GC. Correctness is ensured by **distributed locking** (PostgreSQL advisory locks) and **idempotent operations**: if two instances both detect a job completion, only one acquires the lock and performs the reset; the other is a no-op.
 * **Shared database:** PostgreSQL stores checkpoint records, operation logs, and distributed locks. Each controller instance connects to the same database. The database can run anywhere reachable by the controller instances (co-located, managed cloud service, etc.).
-* **DB-backed runner registry:** the controller stores runner configuration in a PostgreSQL `runners` table. Runners are registered, updated, and deactivated via the admin API (`/api/runners`). An `import-inventory` CLI command exists for one-time migration from the legacy YAML format. The controller loads active runners from the database with a TTL cache and falls back to the YAML inventory if the database is unavailable. See section 6.3 for details.
+* **DB-backed runner registry:** the controller stores runner configuration in a PostgreSQL `runners` table. Runners are registered, updated, and deactivated via the admin API (`/api/runners`). An `import-inventory` CLI command exists for one-time migration from the legacy YAML format. The controller loads active runners from the database with a TTL cache and falls back to the YAML inventory if the database is unavailable. See section 6.2 for details.
 * **Horizontal scaling (runners):** adding runner capacity means adding a new runner entry to the inventory. For Proxmox: provision a server, clone golden template, register. For bare-metal: install CI runner agent, connect via VPN, register. No changes to the controller code.
 * **Horizontal scaling (controller):** adding controller capacity means starting another instance pointed at the same database. No coordination needed beyond shared DB access and consistent inventory.
 
@@ -307,7 +307,7 @@ CI job ──> e2epool CLI ──> Unix socket ──> Agent daemon ──> WebS
 
 ### 5.4 Timeouts & SLAs
 
-Concrete values must be determined during the pilot phase (see section 19) by benchmarking actual operations under load. Starting points:
+Concrete values must be determined during the pilot phase by benchmarking actual operations under load. Starting points:
 
 | Operation | Proxmox backend | Bare-metal backend |
 |-----------|----------------|-------------------|
@@ -319,7 +319,7 @@ Storage backend significantly affects Proxmox values: LVM-thin and ZFS are fast 
 
 ---
 
-## 6. Controller API contract and pseudocode
+## 6. Controller API contract
 
 ### 6.1 API (HTTP + mutual TLS or per-runner Bearer token)
 
@@ -397,152 +397,7 @@ Notes:
 * Response `200`: deactivated runner
 * Response `404`: runner not found
 
-### 6.2 Pseudocode (controller core)
-
-The controller is **stateless**: all mutable state lives in the shared PostgreSQL database. Multiple instances can run concurrently — correctness is ensured by distributed locks and idempotent operations. The controller loads its inventory from a YAML config file (see section 6.3) and dispatches runner operations to the appropriate **runner backend** and CI operations to the configured **CI adapter**.
-
-```
-INVENTORY, CI_ADAPTER = load_inventory("/opt/e2epool/inventory.yml")
-DB = connect_database(os.environ['DATABASE_URL'])  # shared PostgreSQL
-
-
-# ── Backend dispatch ─────────────────────────────────────────────
-
-def create_checkpoint_for(runner_id, name):
-    """Backend-specific checkpoint creation."""
-    runner = INVENTORY[runner_id]
-    if runner.backend == 'proxmox':
-        pve_api(runner_id, runner, 'POST', 'snapshot', json={'snapname': name})
-    elif runner.backend == 'bare_metal':
-        pass  # no hypervisor snapshot; checkpoint is just a DB record
-
-def reset_runner(runner_id, checkpoint, status):
-    """Backend-specific reset after job completion."""
-    runner = INVENTORY[runner_id]
-    if runner.backend == 'proxmox':
-        if status == 'success':
-            run_optional_cmd(runner, 'cleanup_cmd')
-            pve_api(runner_id, runner, 'DELETE', f'snapshot/{checkpoint}')
-        else:
-            pve_api(runner_id, runner, 'POST', 'status/stop', json={'skiplock': 1})
-            wait_for_pve_task(runner, 'stop')
-            pve_api(runner_id, runner, 'POST', f'snapshot/{checkpoint}/rollback')
-            wait_for_pve_task(runner, 'rollback')
-            pve_api(runner_id, runner, 'POST', 'status/start')
-            wait_for_pve_task(runner, 'start')
-            pve_api(runner_id, runner, 'DELETE', f'snapshot/{checkpoint}')
-
-    elif runner.backend == 'bare_metal':
-        if status == 'success':
-            run_optional_cmd(runner, 'cleanup_cmd')
-        else:
-            run_required_cmd(runner, 'reset_cmd')  # must be configured
-
-def check_readiness(runner_id, timeout):
-    runner = INVENTORY[runner_id]
-    deadline = now() + timeout
-    while now() < deadline:
-        if runner.get('readiness_cmd'):
-            if ssh_exec(runner.ip, runner.readiness_cmd).returncode == 0:
-                return
-        elif ssh_reachable(runner.ip) and runner_healthy(runner.ip):
-            return
-        sleep(5)
-    raise TimeoutError(f"Runner {runner_id} not ready after {timeout}s")
-
-def pve_api(runner_id, runner, method, path, **kwargs):
-    """Call Proxmox REST API for the correct node (proxmox backend only)."""
-    url = f"https://{runner.pve_host}:8006/api2/json/nodes/{runner.node}/qemu/{runner_id}/{path}"
-    return requests.request(method, url, headers=pve_auth_headers(), **kwargs)
-
-def run_optional_cmd(runner, cmd_key):
-    cmd = runner.get(cmd_key)
-    if cmd:
-        ssh(runner.ip, cmd)
-
-def run_required_cmd(runner, cmd_key):
-    cmd = runner.get(cmd_key)
-    if not cmd:
-        raise ConfigError(f"{cmd_key} is required for bare_metal runner {runner.runner_id}")
-    ssh(runner.ip, cmd)
-
-
-# ── Core controller logic (backend-agnostic, multi-instance safe) ─
-
-def acquire_lock(runner_id):
-    """PostgreSQL advisory lock — safe across multiple controller instances.
-    Uses zlib.crc32 (not hash()) because Python's hash() is randomized
-    per process (PYTHONHASHSEED), which would produce different lock IDs
-    across controller instances."""
-    lock_id = zlib.crc32(runner_id.encode()) & 0x7FFFFFFF
-    DB.execute("SELECT pg_advisory_lock(%s)", [lock_id])
-
-def release_lock(runner_id):
-    lock_id = zlib.crc32(runner_id.encode()) & 0x7FFFFFFF
-    DB.execute("SELECT pg_advisory_unlock(%s)", [lock_id])
-
-
-def create_checkpoint(runner_id, job_id, caller_token):
-    if not token_authorized_for(caller_token, runner_id):
-        return 403
-
-    lock = acquire_lock(runner_id)
-    try:
-        if active_checkpoint_exists(runner_id):
-            return 409, "active checkpoint already exists"
-
-        name = f"job-{job_id}-{int(time.time())}"
-        create_checkpoint_for(runner_id, name)
-        record(runner=runner_id, chk=name, job=job_id, created=now(), state='created')
-        return 200, {checkpoint: name}
-    finally:
-        release_lock(lock)
-
-
-def finalize_checkpoint(runner_id, checkpoint, job_id, status):
-    lock = acquire_lock(runner_id)
-    try:
-        rec = get_record(runner_id, checkpoint)
-        if rec.state in ('finalize_queued', 'reset', 'deleted', 'gc_reset'):
-            return 202, "already finalized"
-
-        record_update(rec, state='finalize_queued', status=status)
-        enqueue_async(do_finalize, runner_id, checkpoint, status)
-        return 202, {op_id: rec.op_id}
-    finally:
-        release_lock(lock)
-
-
-def do_finalize(runner_id, checkpoint, status):
-    # runs asynchronously in a worker (Celery/RQ in production)
-    lock = acquire_lock(runner_id)
-    try:
-        needs_reset = (status != 'success')
-        needs_action = needs_reset or runner_has_cmd(runner_id, 'cleanup_cmd')
-        if needs_action:
-            CI_ADAPTER.pause_runner(runner_id)
-        reset_runner(runner_id, checkpoint, status)
-        if needs_reset:
-            check_readiness(runner_id, timeout=120)
-        if needs_action:
-            CI_ADAPTER.unpause_runner(runner_id)
-        record_update(state='reset' if needs_reset else 'deleted')
-    finally:
-        release_lock(lock)
-
-
-# ── Job status poller (CI-agnostic via adapter) ──────────────────
-
-def poll_job_status():
-    while True:
-        for rec in get_active_checkpoints():  # state == 'created'
-            status = CI_ADAPTER.get_job_status(rec.job_id)
-            if status in ('success', 'failed', 'canceled'):
-                finalize_checkpoint(rec.runner_id, rec.name, rec.job_id, status)
-        sleep(POLL_INTERVAL)  # 15-30s
-```
-
-### 6.3 Controller inventory
+### 6.2 Controller inventory
 
 The controller's runner inventory is **stored in the PostgreSQL database** (`runners` table). Runners are registered, updated, and deactivated via the **admin API** (`/api/runners`).
 
@@ -661,7 +516,7 @@ rm -rf /tmp/test-results/*
 
 **Note:** The YAML format is now legacy. The primary runner registry is the database (`runners` table), accessed via the admin API. The YAML inventory remains supported for backward compatibility and as a fallback, but new deployments should use the database-backed registry exclusively.
 
-### 6.4 Database schema
+### 6.3 Database schema
 
 The shared PostgreSQL database stores checkpoint records, operation logs, and runner registry. All controller instances read and write to this schema.
 
@@ -736,7 +591,7 @@ CREATE TABLE operation_logs (
 * The checkpoint column is named `name` (not `checkpoint`) to avoid ambiguity with the table name.
 * `detail` is `TEXT` rather than `JSONB` — sufficient for audit logging in v1. Can be migrated to `JSONB` if structured querying is needed later.
 
-### 6.5 Edge cases
+### 6.4 Edge cases
 
 * **Controller crash during finalize**: on startup, the controller's `reconcile_on_startup()` function scans for checkpoints in `finalize_queued` state and re-enqueues them via `do_finalize.delay()`. Finalize is idempotent.
 * **Runner never calls finalize (crash, network partition)**: job status poller detects the job has completed via the CI adapter and triggers finalize. If both fail, GC catches it within TTL (30 min).
@@ -864,111 +719,7 @@ e2e_tests:
 
 The `pre_build_script` in the runner's `config.toml` creates the checkpoint before the job starts. The controller detects job completion via polling or webhook and finalizes automatically.
 
-**Legacy: manual integration** (if not using pre_build_script):
-
-```yaml
-variables:
-  LIFECYCLE_CONTROLLER: "https://e2e-controller.internal"
-
-stages:
-  - test
-
-# ── Base template (HTTP-based, backend-agnostic) ──────────────
-.e2e_base: &e2e_base
-  before_script:
-    - RUNNER_ID=$(cat /etc/runner_id)
-    - >-
-      RESPONSE=$(curl -sf -X POST
-      "$LIFECYCLE_CONTROLLER/checkpoint/create"
-      -H "Authorization: Bearer $RUNNER_TOKEN"
-      -H "Content-Type: application/json"
-      -d "{\"runner_id\": \"$RUNNER_ID\", \"job_id\": \"$CI_JOB_ID\", \"caller\": \"$CI_RUNNER_DESCRIPTION\"}")
-    - export CHECKPOINT_NAME=$(echo "$RESPONSE" | jq -r .name)
-    - echo "Checkpoint created: $CHECKPOINT_NAME"
-
-  after_script:
-    # 1. Upload artifacts FIRST (before finalize can reset the runner)
-    - cp -r test-results/ $CI_PROJECT_DIR/test-results/ 2>/dev/null || true
-
-    # 2. Fire-and-forget finalize (controller returns 202 immediately)
-    - RUNNER_ID=$(cat /etc/runner_id)
-    - >-
-      if [ -n "$CHECKPOINT_NAME" ]; then
-        curl -sf -X POST
-        "$LIFECYCLE_CONTROLLER/checkpoint/finalize"
-        -H "Authorization: Bearer $RUNNER_TOKEN"
-        -H "Content-Type: application/json"
-        -d "{\"checkpoint_name\": \"$CHECKPOINT_NAME\", \"status\": \"$CI_JOB_STATUS\", \"source\": \"hook\"}"
-        --max-time 10 --retry 2 --retry-delay 3 || true;
-      fi
-
-### Example: Docker Compose E2E (Voltavo)
-e2e_tests_voltavo:
-  <<: *e2e_base
-  tags: [e2e]
-  script:
-    - docker compose -f docker-compose.e2e.yml pull
-    - docker compose -f docker-compose.e2e.yml up -d
-    - docker compose -f docker-compose.e2e.yml exec backend pytest -q tests/e2e --junitxml=test-results/results.xml
-  artifacts:
-    when: always
-    paths:
-      - test-results/
-```
-
-Each project only defines its own `script` block and `tags`:
-
-```yaml
-### Example: pvwebapp E2E
-e2e_tests_pvwebapp:
-  <<: *e2e_base
-  tags: [e2e]
-  script:
-    - docker compose -f docker-compose.e2e.yml pull
-    - docker compose -f docker-compose.e2e.yml up -d
-    - docker compose -f docker-compose.e2e.yml exec backend python manage.py test --tag=e2e
-  artifacts:
-    when: always
-    paths:
-      - test-results/
-
-### Example: Playwright browser tests
-e2e_tests_browser:
-  <<: *e2e_base
-  tags: [e2e]
-  script:
-    - npx playwright install --with-deps
-    - npx playwright test --reporter=junit --output=test-results/
-  artifacts:
-    when: always
-    paths:
-      - test-results/
-
-### Example: iOS E2E on Mac Mini
-e2e_tests_ios:
-  <<: *e2e_base
-  tags: [e2e-mobile]
-  script:
-    - cd mobile/ios
-    - xcodebuild test -scheme AppE2E -destination 'platform=iOS Simulator,name=iPhone 16'
-      -resultBundlePath test-results/results.xcresult
-  artifacts:
-    when: always
-    paths:
-      - test-results/
-
-### Example: Android E2E on Mac Mini
-e2e_tests_android:
-  <<: *e2e_base
-  tags: [e2e-mobile]
-  script:
-    - npx detox build --configuration android.emu.release
-    - npx detox test --configuration android.emu.release --artifacts-location test-results/
-  artifacts:
-    when: always
-    paths:
-      - test-results/
-```
+**Legacy: manual integration** (if not using `pre_build_script`): use `before_script`/`after_script` with `curl` calls to the checkpoint API. See the controller API contract (section 6.1) for endpoint details. This approach requires storing `RUNNER_TOKEN` as a CI variable and having network ingress from runners to the controller.
 
 ### 7.4 Reference: GitHub Actions (sketch)
 
@@ -1060,34 +811,7 @@ The pool is **shared across all projects**. Runners are generic: each includes a
 | **Network** | Static IP (internal, via pfSense DHCP reservation) | Must survive reboots and rollbacks. No public IP needed. |
 | **OS** | Ubuntu 24.04 LTS (minimal server) | Generic base. Minimal install + Docker CE + CI runner agent. No project-specific software baked in. |
 
-### 8.2 Project resource profiles (reference)
-
-These are the actual resource requirements per project, used to justify the shared VM sizing above:
-
-**Voltavo (heaviest - defines the VM spec):**
-
-| Container | Base image | Resource profile |
-|-----------|-----------|-----------------|
-| `backend` | Ubuntu 24.04 + Python 3.12 + LibreOffice | CPU + memory heavy (~1.5 GB) |
-| `reverse_proxy` | Nginx (alpine) | Lightweight |
-| `db` | PostgreSQL 14 | IO + memory (~1 GB) |
-| `redis` | Redis 7 (alpine) | Lightweight (~256 MB) |
-| `celery_worker` | Same as backend | CPU (~512 MB) |
-| `celery_beat` | Same as backend | Lightweight |
-| **Total** | | **~5-6 GB peak** |
-
-**pvwebapp (lighter):**
-
-| Container | Base image | Resource profile |
-|-----------|-----------|-----------------|
-| `backend` | Python 3.10 + LibreOffice | CPU + memory (~1 GB) |
-| `frontend` | Node 18 (dev server or Nginx) | Lightweight |
-| `db` | PostgreSQL 12 | IO + memory (~512 MB) |
-| **Total** | | **~3-4 GB peak** |
-
-Both projects fit comfortably within the 4 vCPU / 8 GB spec. Future projects that exceed this can be evaluated when they arise.
-
-### 8.3 Bare-metal runner spec (Mac Mini)
+### 8.2 Bare-metal runner spec (Mac Mini)
 
 Mac Minis in the office serve mobile E2E tests (iOS simulators, Android emulators). They are **not** Proxmox VMs — the controller manages them via SSH over the VPN tunnel.
 
@@ -1102,7 +826,7 @@ Mac Minis in the office serve mobile E2E tests (iOS simulators, Android emulator
 
 **Key difference from Proxmox runners:** no hypervisor snapshots. Reset is script-based (`reset_cmd` in inventory). The `reset_cmd` must be thorough enough to return the machine to a clean state (kill processes, erase simulators, clear derived data).
 
-### 8.4 Controller instance spec
+### 8.3 Controller instance spec
 
 The controller is a **stateless service** that can run on any platform. Each instance needs:
 
@@ -1125,7 +849,7 @@ The controller is a **stateless service** that can run on any platform. Each ins
 
 For **multiple instances**, place them behind a load balancer (HAProxy, Nginx, cloud LB), floating IP, or DNS round-robin. Runners send checkpoint API calls to the stable endpoint.
 
-### 8.5 Shared database spec
+### 8.4 Shared database spec
 
 | Resource | Spec | Rationale |
 |----------|------|-----------|
@@ -1137,82 +861,14 @@ For **multiple instances**, place them behind a load balancer (HAProxy, Nginx, c
 
 For v1, a PostgreSQL instance on the same network as the controllers (Proxmox VM, Hetzner Cloud) is sufficient. A managed database service simplifies backups and HA.
 
-### 8.6 Infrastructure VM specs (Node 1)
+### 8.5 Infrastructure VM specs (Node 1)
 
-These VMs run on **Node 1** and serve the runner pool. The controller is **not** included here — it runs independently (see section 8.4).
+These VMs run on **Node 1** and serve the runner pool. The controller is **not** included here — it runs independently (see section 8.3).
 
 | VM | CPU | RAM | Disk | Role |
 |----|-----|-----|------|------|
 | pfSense (100) | 2 | 2 GB | 16 GB | Router, DHCP, firewall for internal network |
-| Registry (221) | 2 | 4 GB | 50 GB | Local container registry for all projects. See [Local Container Registry RFC](./local-container-registry.md). |
-| Golden template (210) | - | - | 64 GB | Stopped. Cloned to create new runners on any node. |
-
-### 8.7 Resource budget per node
-
-**Node 1 (infra + runners) - Hetzner AX41-NVMe:**
-
-| | CPU | RAM | Disk |
-|--|-----|-----|------|
-| Proxmox host overhead | ~2 | ~3 GB | ~20 GB |
-| pfSense | 2 | 2 GB | 16 GB |
-| Registry | 2 | 4 GB | 50 GB |
-| Golden template (stopped) | 0 | 0 | 64 GB |
-| Runner VMs (3x) | 12 | 24 GB | 192 GB |
-| **Total** | **18** | **33 GB** | **342 GB** |
-| **Host capacity** | **16 threads** | **64 GB** | **~930 GB (RAID1)** |
-| **Headroom** | OK (overcommit acceptable — runners are not CPU-saturated simultaneously; E2E jobs are IO-bound) | **31 GB free** | **588 GB free** |
-
-Comfortable fit. 31 GB free RAM allows adding 3-4 more runners later if needed. If a controller instance is co-located on Node 1, add 1 vCPU + 1 GB RAM to the budget.
-
-**Node N (runners only) - any Hetzner dedicated server:**
-
-Runner-only nodes need no infrastructure VMs. Just Proxmox + runner VMs.
-
-| | CPU | RAM | Disk |
-|--|-----|-----|------|
-| Proxmox host overhead | ~2 | ~3 GB | ~20 GB |
-| Runner VMs (depends on host) | 4 each | 8 GB each | 64 GB each |
-
-Example: a second AX41-NVMe (8c/16t, 64 GB, 2x1 TB) could host ~6 additional runners (24 vCPUs, 48 GB RAM), bringing total pool to 9 runners.
-
-### 8.8 Runner ID allocation convention
-
-Proxmox VMIDs are namespaced by node. Bare-metal runners use descriptive string names.
-
-**Proxmox runners (by node):**
-
-| Range | Node | Purpose |
-|-------|------|---------|
-| 100-199 | Node 1 | Infrastructure (pfSense, etc.) |
-| 200-299 | Node 1 | E2E pool (template, runners, registry) |
-| 300-399 | Node 2 | E2E runners (future) |
-| 400-499 | Node 3 | E2E runners (future) |
-
-**Node 1 (initial):**
-
-| Runner ID | Name | Backend | Role |
-|-----------|------|---------|------|
-| 100 | pfsense | — | Router/firewall |
-| 210 | e2e-basevm | — | Golden template (generic, all projects) |
-| 211 | e2e-01 | proxmox | E2E runner 1 (shared pool) |
-| 212 | e2e-02 | proxmox | E2E runner 2 (shared pool) |
-| 213 | e2e-03 | proxmox | E2E runner 3 (shared pool) |
-| 221 | e2e-registry | — | Local container registry |
-
-**Node 2 (future):**
-
-| Runner ID | Name | Backend | Role |
-|-----------|------|---------|------|
-| 311 | e2e-04 | proxmox | E2E runner 4 (shared pool) |
-| 312 | e2e-05 | proxmox | E2E runner 5 (shared pool) |
-| 313 | e2e-06 | proxmox | E2E runner 6 (shared pool) |
-
-**Office site (bare-metal):**
-
-| Runner ID | Name | Backend | Role |
-|-----------|------|---------|------|
-| mac-01 | e2e-mobile-01 | bare_metal | Mobile E2E runner 1 (iOS/Android) |
-| mac-02 | e2e-mobile-02 | bare_metal | Mobile E2E runner 2 (iOS/Android) |
+| Golden template (400) | - | - | 64 GB | Stopped. Cloned to create new runners on any node. |
 
 ---
 
@@ -1276,7 +932,7 @@ The cloud-init template (`scripts/e2e-runner.yaml`) pre-installs all required pa
 2. **Install tooling**: Xcode (with command line tools), Android SDK (if needed), CI runner agent (e.g., `gitlab-runner install`), `jq`, `curl`.
 3. **Register CI runner**: register with the CI system using `concurrent=1`, `e2e-mobile` tag.
 4. **Write runner ID**: `echo "mac-01" | sudo tee /etc/runner_id`.
-5. **Create reset/cleanup scripts**: `~/scripts/reset-mobile-env.sh` (see section 6.3 for example).
+5. **Create reset/cleanup scripts**: `~/scripts/reset-mobile-env.sh` (see section 6.2 for example).
 6. **Install e2epool agent**: `pip install e2epool`, create `/etc/e2epool/agent.yml` with the runner's `runner_id` and token, enable as a system service (see README for systemd/launchd setup).
 7. **Add to controller inventory**: add entry with `backend: bare_metal`, reset/cleanup commands.
 8. **Verify**: run a smoke test mobile E2E job.
@@ -1360,7 +1016,7 @@ The golden image is a **project-agnostic** Proxmox VM template from which all Pr
   6. Unpause runner via CI adapter.
   7. Mark record as GC'd and emit metric/alert.
 * Reset/delete operations should be retried with exponential backoff on failure and cause alerts if persistent.
-* **Proactive cleanup for successful jobs**: even without reset, successful jobs can leave behind state (Docker containers, temp files, etc.). If `cleanup_cmd` is configured in the inventory (see section 6.3), the controller runs it after successful finalize. For Proxmox VMs, consider a periodic proactive rollback to golden state every N successful jobs (e.g., every 50) or every 24 hours to prevent drift.
+* **Proactive cleanup for successful jobs**: even without reset, successful jobs can leave behind state (Docker containers, temp files, etc.). If `cleanup_cmd` is configured in the inventory (see section 6.2), the controller runs it after successful finalize. For Proxmox VMs, consider a periodic proactive rollback to golden state every N successful jobs (e.g., every 50) or every 24 hours to prevent drift.
 
 ---
 
@@ -1531,186 +1187,7 @@ No coordination needed. The new instance immediately starts serving API requests
 
 Auto-scaling is out of scope for v1 but the manual procedures above can be scripted.
 
----
-
-## 17. Sample controller implementation outline (Python + FastAPI)
-
-This is a sketch to illustrate the async pattern, input validation, backend dispatch, multi-backend support, and **multi-instance safety** (distributed locking via PostgreSQL). The actual implementation uses **FastAPI** (with Pydantic), **Celery** (Redis broker) for async tasks, and **SQLAlchemy ORM** with Alembic migrations. The sample below uses Flask for simplicity; the production code follows the same patterns.
-
-```python
-import os
-import re
-import time
-import zlib
-import subprocess
-import yaml
-import psycopg2
-from flask import Flask, request, jsonify
-from proxmoxer import ProxmoxAPI
-from rq import Queue  # production: use Celery or RQ, never bare threads
-
-app = Flask(__name__)
-
-JOB_ID_PATTERN = re.compile(r'^[\w.-]+$')  # opaque string from any CI system
-CHECKPOINT_PATTERN = re.compile(r'^job-[\w.]+-\d+$')
-
-# ── Shared state (PostgreSQL) ────────────────────────────────────
-DB_URL = os.environ['DATABASE_URL']  # same DB for all instances
-
-def get_db():
-    return psycopg2.connect(DB_URL)
-
-
-def load_inventory(path=None):
-    path = path or os.environ.get('INVENTORY_PATH', '/opt/e2epool/inventory.yml')
-    with open(path) as f:
-        config = yaml.safe_load(f)
-    return config['runners'], config.get('settings', {}), config.get('ci_adapter', {})
-
-INVENTORY, SETTINGS, CI_ADAPTER_CONFIG = load_inventory()
-
-
-# ── Distributed locking (safe across multiple instances) ──────────
-
-def acquire_lock(runner_id):
-    """PostgreSQL advisory lock keyed on runner_id.
-    Uses zlib.crc32 (deterministic) — NOT hash() which is randomized per process."""
-    lock_id = zlib.crc32(runner_id.encode()) & 0x7FFFFFFF
-    conn = get_db()
-    conn.cursor().execute("SELECT pg_advisory_lock(%s)", (lock_id,))
-    return conn
-
-def release_lock(conn, runner_id):
-    lock_id = zlib.crc32(runner_id.encode()) & 0x7FFFFFFF
-    conn.cursor().execute("SELECT pg_advisory_unlock(%s)", (lock_id,))
-    conn.close()
-
-
-# ── Backend: Proxmox ─────────────────────────────────────────────
-
-def get_pve(runner):
-    """Get Proxmox API client for a proxmox-backend runner."""
-    return ProxmoxAPI(
-        runner['pve_host'], user='e2epool@pve', password='...', verify_ssl=False
-    ), runner['node']
-
-def proxmox_create_checkpoint(runner_id, runner, name):
-    pve, node = get_pve(runner)
-    pve.nodes(node).qemu(int(runner_id)).snapshot.create(snapname=name)
-
-def proxmox_reset(runner_id, runner, checkpoint, status):
-    pve, node = get_pve(runner)
-    vm = pve.nodes(node).qemu(int(runner_id))
-    if status == 'success':
-        ssh_optional(runner, 'cleanup_cmd')
-        vm.snapshot(checkpoint).delete()
-    else:
-        try:
-            vm.status.stop.post(skiplock=1)
-        except Exception:
-            pass
-        vm.snapshot(checkpoint).rollback.post()
-        vm.status.start.post()
-        vm.snapshot(checkpoint).delete()
-
-
-# ── Backend: Bare-metal ──────────────────────────────────────────
-
-def bare_metal_create_checkpoint(runner_id, runner, name):
-    pass  # no hypervisor snapshot; checkpoint is just a DB record
-
-def bare_metal_reset(runner_id, runner, checkpoint, status):
-    if status == 'success':
-        ssh_optional(runner, 'cleanup_cmd')
-    else:
-        ssh_required(runner, 'reset_cmd')
-
-
-# ── Backend dispatch ─────────────────────────────────────────────
-
-BACKENDS = {
-    'proxmox': {
-        'create': proxmox_create_checkpoint,
-        'reset': proxmox_reset,
-    },
-    'bare_metal': {
-        'create': bare_metal_create_checkpoint,
-        'reset': bare_metal_reset,
-    },
-}
-
-def dispatch(runner_id, operation, *args):
-    runner = INVENTORY[runner_id]
-    backend = BACKENDS[runner['backend']]
-    return backend[operation](runner_id, runner, *args)
-
-
-# ── SSH helpers ──────────────────────────────────────────────────
-
-def ssh_optional(runner, cmd_key):
-    cmd = runner.get(cmd_key)
-    if cmd:
-        subprocess.run(['ssh', runner['ip'], cmd], timeout=120, check=False)
-
-def ssh_required(runner, cmd_key):
-    cmd = runner.get(cmd_key)
-    if not cmd:
-        raise ValueError(f"{cmd_key} required for bare_metal runner")
-    subprocess.run(['ssh', runner['ip'], cmd], timeout=120, check=True)
-
-
-# ── API endpoints (backend-agnostic, multi-instance safe) ─────────
-
-@app.route('/checkpoint/create', methods=['POST'])
-def create():
-    body = request.json
-    runner_id = str(body['runner_id'])
-    job = str(body['job_id'])
-    if runner_id not in INVENTORY:
-        return jsonify({'error': 'unknown runner'}), 400
-    if not JOB_ID_PATTERN.match(job):
-        return jsonify({'error': 'invalid job_id'}), 400
-    # auth: verify token is scoped to this runner (omitted)
-    conn = acquire_lock(runner_id)
-    try:
-        # check for active checkpoint in shared DB (omitted)
-        name = f"job-{job}-{int(time.time())}"
-        dispatch(runner_id, 'create', name)
-        # persist record to shared DB (omitted)
-        return jsonify({'checkpoint': name}), 200
-    finally:
-        release_lock(conn, runner_id)
-
-
-@app.route('/checkpoint/finalize', methods=['POST'])
-def finalize():
-    body = request.json
-    runner_id = str(body['runner_id'])
-    checkpoint = body['checkpoint']
-    status = body['status']
-    if not CHECKPOINT_PATTERN.match(checkpoint):
-        return jsonify({'error': 'invalid checkpoint name'}), 400
-    # persist finalize intent to shared DB, return 202 immediately
-    # IMPORTANT: use a persistent task queue (Celery/RQ), never bare threads —
-    # threads lose work on process restart and swallow exceptions silently.
-    task_queue.enqueue(do_finalize, runner_id, checkpoint, status)
-    return jsonify({'message': 'finalize queued'}), 202
-
-
-def do_finalize(runner_id, checkpoint, status):
-    conn = acquire_lock(runner_id)  # distributed lock — only one instance runs this
-    try:
-        # check if already finalized in shared DB (idempotent)
-        dispatch(runner_id, 'reset', checkpoint, status)
-        # wait for readiness, unpause runner via CI adapter (omitted)
-        # update record in shared DB (omitted)
-    finally:
-        release_lock(conn, runner_id)
-```
-
----
-
-## 18. Operational runbook (summary)
+## 17. Operational runbook (summary)
 
 | Scenario | Action |
 |----------|--------|
@@ -1725,35 +1202,3 @@ def do_finalize(runner_id, checkpoint, status):
 | **VPN tunnel down** | Mobile jobs fail. Check pfSense WireGuard status and office router. Proxmox runners unaffected. |
 | **`reset_cmd` fails** (bare-metal) | Runner paused. SSH into Mac Mini, manually run reset script or fix the environment. Unpause runner. |
 
----
-
-## 19. Implementation status and next actions
-
-### Phase 1: Proxmox pool (web/backend E2E) — **COMPLETED**
-
-1. ✅ **Provision Node 1**: Hetzner AX41-NVMe provisioned, Proxmox VE installed, pfSense configured for internal networking + WireGuard VPN endpoint.
-2. ✅ **Deploy infrastructure**: registry VM (221) deployed with TLS and push auth. Shared PostgreSQL database provisioned.
-3. ✅ **Implement Lifecycle Controller**: stateless service implemented with async finalize, job status poller, GitLab webhook support, backend dispatch (Proxmox + bare-metal handlers), distributed locking (PostgreSQL advisory locks), per-runner auth, DB-backed runner registry with admin API, YAML inventory fallback, input validation, and WebSocket agent support.
-4. ✅ **Deploy controller instance(s)**: controller deployed on Proxmox VM with stable endpoint. Multi-instance support implemented.
-5. ✅ **Create CI API token**: GitLab API token created (`read_api` scope) for job status poller. PVE API user (`e2epool@pve`) created with snapshot/power privileges.
-6. ✅ **Build golden template** (210): Ubuntu 24.04 + Docker CE + GitLab runner agent + `e2epool` CLI + registry CA cert + base images.
-7. ✅ **Clone runner VMs** from golden template. Automated provisioning scripts implemented (`create-e2e-runner.sh`, `destroy-e2e-runner.sh`). Runners configured with `concurrent=1`, static IPs, NTP, `/etc/runner_id`, and `pre_build_script` checkpoint hook.
-8. ✅ **Deploy e2epool agent**: agent deployed on runners via systemd service. Checkpoint creation moved to GitLab runner's `pre_build_script` hook for transparent operation (no per-project CI config needed).
-9. ✅ **Pilot**: system operational and tested with multiple projects.
-10. ✅ **Production hardening**: rate limiting, audit logging, metrics, and alerting implemented. Admin API for runner registration. Database migration tools (`import-inventory`) completed.
-
-### Phase 2: Bare-metal pool (mobile E2E) — **NEXT**
-
-1. **Set up WireGuard VPN** from office network to pfSense on Node 1. Verify connectivity from controller instances.
-2. **Provision Mac Minis**: install Xcode, Android SDK, GitLab runner agent, `e2epool` CLI + agent. Write `/etc/runner_id`, create reset/cleanup scripts, configure `pre_build_script` checkpoint hook, and enable `e2epool` agent service via launchd.
-3. **Register Mac Minis** via admin API (`POST /api/runners`) with `backend: bare_metal`. Register GitLab runners with `e2e-mobile` tag. Deploy `e2epool` agent on each Mac Mini with `/etc/e2epool/agent.yml`.
-4. **Pilot mobile E2E** for one week. Tune `reset_cmd`, measure reset times, validate readiness checks.
-
-### Phase 3: Scale — **FUTURE**
-
-1. **Scale Proxmox**: add runner VMs on Node 1 (if capacity allows) or provision Node 2 and clone runners there (see section 9.4). Use automated provisioning scripts. No controller code changes required.
-2. **Scale bare-metal**: add more Mac Minis to the office, register via admin API.
-3. **Scale controller**: add instances on different platforms for HA/geographic distribution (see section 16.6). Already supported with multi-instance shared database architecture.
-4. **Evaluate**: consider per-project tags if queue contention becomes a problem.
-
----
