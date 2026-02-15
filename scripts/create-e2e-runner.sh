@@ -197,6 +197,11 @@ if ! $DRY_RUN; then
     ssh $SSH_OPTS "$SSH_USER@$IP" \
         "cloud-init status --wait >/dev/null 2>&1 || sleep 10"
     log "Cloud-init done."
+
+    # Set hostname to match runner-id
+    log "Setting hostname to '$RUNNER_ID'..."
+    ssh $SSH_OPTS "$SSH_USER@$IP" \
+        "sudo hostnamectl set-hostname '${RUNNER_ID}'"
 else
     log "[dry-run] Would wait for SSH on $SSH_USER@$IP"
 fi
