@@ -214,7 +214,7 @@ log "=== Step 4: Registering GitLab runner ==="
 
 if $DRY_RUN; then
     log "[dry-run] Would register GitLab runner on $SSH_USER@$IP"
-    log "[dry-run] gitlab-runner register --url $GITLAB_URL --token $GITLAB_TOKEN --executor shell"
+    log "[dry-run] Would configure pre_build_script and post_build_script in config.toml"
 else
     ssh $SSH_OPTS "$SSH_USER@$IP" \
         "sudo gitlab-runner register \
@@ -224,6 +224,28 @@ else
             --executor shell \
             --name '${RUNNER_ID}'"
     log "GitLab runner registered."
+
+    # Add e2epool checkpoint hooks to runner config
+    log "Configuring e2epool checkpoint hooks in config.toml..."
+    ssh $SSH_OPTS "$SSH_USER@$IP" 'sudo python3 -' <<'PYSCRIPT'
+path = "/etc/gitlab-runner/config.toml"
+content = open(path).read()
+
+pre = """export CHECKPOINT=$(e2epool create --job-id "$CI_JOB_ID") || { echo "Failed to create checkpoint"; exit 1; }
+echo "Checkpoint created - $CHECKPOINT"
+"""
+
+post = """if [ -n "$CHECKPOINT" ]; then e2epool finalize --checkpoint "$CHECKPOINT" --status "$CI_JOB_STATUS"; fi
+"""
+
+insert = '  pre_build_script = """\n' + pre + '"""\n  post_build_script = """\n' + post + '"""'
+content = content.replace('executor = "shell"', 'executor = "shell"\n' + insert)
+
+with open(path, "w") as f:
+    f.write(content)
+print("config.toml updated with e2epool hooks")
+PYSCRIPT
+    log "Checkpoint hooks configured."
 fi
 
 # ---------------------------------------------------------------------------
