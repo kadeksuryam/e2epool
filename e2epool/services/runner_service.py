@@ -44,17 +44,36 @@ def validate_runner_fields(backend: str, data: dict) -> None:
 
 
 def create_runner(db: Session, data: dict) -> Runner:
-    """Insert a new runner row. Auto-generates token.
+    """Insert a new runner row or reactivate a deactivated one.
 
-    Raises IntegrityError (caller should handle as 409).
+    Auto-generates a new token. If the runner_id exists but is deactivated,
+    reactivates it with the new data. Raises IntegrityError if runner_id
+    exists and is active (caller should handle as 409).
     """
     validate_runner_fields(data["backend"], data)
 
     tags = data.pop("tags", [])
+    tags_json = json.dumps(tags) if tags else None
+
+    # Check for existing deactivated runner
+    existing = (
+        db.query(Runner)
+        .filter(Runner.runner_id == data["runner_id"], Runner.is_active.is_(False))
+        .first()
+    )
+    if existing:
+        for key, val in data.items():
+            setattr(existing, key, val)
+        existing.token = secrets.token_urlsafe(32)
+        existing.tags = tags_json
+        existing.is_active = True
+        db.flush()
+        return existing
+
     runner = Runner(
         **data,
         token=secrets.token_urlsafe(32),
-        tags=json.dumps(tags) if tags else None,
+        tags=tags_json,
     )
     db.add(runner)
     db.flush()
