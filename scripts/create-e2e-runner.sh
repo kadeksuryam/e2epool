@@ -297,7 +297,7 @@ else
     # 6a: Install Python dependencies and e2epool package in a venv
     log "Installing e2epool package..."
     remote_ssh "sudo apt-get update -qq && \
-        sudo apt-get install -y -qq python3-pip python3-venv libpq-dev git >/dev/null && \
+        sudo apt-get install -y -qq python3-pip python3-venv python3.12-venv libpq-dev git >/dev/null && \
         sudo python3 -m venv /opt/e2epool/venv && \
         sudo /opt/e2epool/venv/bin/pip install 'git+${E2EPOOL_REPO}' && \
         sudo ln -sf /opt/e2epool/venv/bin/e2epool /usr/local/bin/e2epool"
