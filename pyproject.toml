@@ -8,21 +8,20 @@ version = "0.1.0"
 description = "E2E Test Pool Lifecycle Controller"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi[standard]>=0.115",
-    "uvicorn[standard]>=0.32",
-    "sqlalchemy>=2.0",
-    "alembic>=1.14",
-    "psycopg2-binary>=2.9",
-    "pydantic-settings>=2.0",
-    "celery[redis]>=5.4",
-    "pyyaml>=6.0",
-    "proxmoxer>=2.1",
-    "requests>=2.28",
-
-    "httpx>=0.28",
-    "structlog>=24.0",
-    "websockets>=13.0",
-    "click>=8.0",
+    "fastapi[standard]~=0.129.0",
+    "uvicorn[standard]~=0.40.0",
+    "sqlalchemy~=2.0.46",
+    "alembic~=1.18.4",
+    "psycopg2-binary~=2.9.11",
+    "pydantic-settings~=2.12.0",
+    "celery[redis]~=5.6.2",
+    "pyyaml~=6.0.3",
+    "proxmoxer~=2.2.0",
+    "requests~=2.28",
+    "httpx~=0.28.1",
+    "structlog~=25.5.0",
+    "websockets~=16.0",
+    "click~=8.3.1",
 ]
 
 [project.scripts]
