@@ -22,6 +22,8 @@ CONTROLLER_URL="https://e2epool.planville.site:8080"
 WS_URL="wss://e2epool.planville.site:8080/ws/agent"
 E2EPOOL_REPO="https://github.com/kadeksuryam/e2epool.git"
 
+CLOUD_INIT_TEMPLATE="/var/lib/vz/snippets/e2e-runner.yaml"
+CLOUD_INIT_RENDERED="/var/lib/vz/snippets/.rendered.yaml"
 CLOUD_INIT_SNIPPET="local:snippets/.rendered.yaml"
 SSH_USER="ubuntu"
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -q"
@@ -145,6 +147,26 @@ IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
 TAGS_JSON=$(printf '%s\n' "${TAG_ARRAY[@]}" | jq -R . | jq -s .)
 
 # ---------------------------------------------------------------------------
+# Step 0: Render cloud-init template
+# ---------------------------------------------------------------------------
+
+log "=== Step 0: Rendering cloud-init template ==="
+
+SSH_PUBKEY=$(cat /root/.ssh/id_rsa.pub 2>/dev/null || cat /root/.ssh/id_ed25519.pub 2>/dev/null) \
+    || die "No SSH public key found in /root/.ssh/"
+
+if $DRY_RUN; then
+    log "[dry-run] Would render $CLOUD_INIT_TEMPLATE → $CLOUD_INIT_RENDERED"
+    log "[dry-run] HOSTNAME=$RUNNER_ID, SSH_KEY=$SSH_PUBKEY"
+else
+    [[ -f "$CLOUD_INIT_TEMPLATE" ]] || die "Cloud-init template not found: $CLOUD_INIT_TEMPLATE"
+    sed -e "s|\${HOSTNAME}|${RUNNER_ID}|g" \
+        -e "s|\${SSH_KEY}|${SSH_PUBKEY}|g" \
+        "$CLOUD_INIT_TEMPLATE" > "$CLOUD_INIT_RENDERED"
+    log "Rendered cloud-init config to $CLOUD_INIT_RENDERED"
+fi
+
+# ---------------------------------------------------------------------------
 # Step 1: Clone template and configure VM
 # ---------------------------------------------------------------------------
 
@@ -214,7 +236,7 @@ log "=== Step 4: Registering GitLab runner ==="
 
 if $DRY_RUN; then
     log "[dry-run] Would register GitLab runner on $SSH_USER@$IP"
-    log "[dry-run] Would configure pre_build_script and post_build_script in config.toml"
+    log "[dry-run] Would configure pre_build_script in config.toml"
 else
     ssh $SSH_OPTS "$SSH_USER@$IP" \
         "sudo gitlab-runner register \
@@ -320,11 +342,9 @@ if $DRY_RUN; then
     log "[dry-run] Would install e2epool agent on $SSH_USER@$IP"
     log "[dry-run] Agent config: controller_url=$WS_URL, runner_id=$RUNNER_ID, token=${RUNNER_TOKEN:0:8}..."
 else
-    # 6a: Install Python dependencies and e2epool package in a venv
+    # 6a: Install e2epool package in a venv (packages already installed by cloud-init)
     log "Installing e2epool package..."
-    remote_ssh "sudo apt-get update -qq && \
-        sudo apt-get install -y -qq python3-pip python3-venv python3.12-venv libpq-dev git >/dev/null && \
-        sudo python3 -m venv /opt/e2epool/venv && \
+    remote_ssh "sudo python3 -m venv /opt/e2epool/venv && \
         sudo /opt/e2epool/venv/bin/pip install 'git+${E2EPOOL_REPO}' && \
         sudo ln -sf /opt/e2epool/venv/bin/e2epool /usr/local/bin/e2epool"
 
