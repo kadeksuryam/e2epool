@@ -1,6 +1,6 @@
 # Production Deployment Guide
 
-This guide covers deploying e2epool in production. It assumes familiarity with the [architecture overview](./e2e-test-hla.md) and the project [README](../README.md).
+This guide covers deploying e2epool in production. It assumes familiarity with the [architecture overview](./architecture.md) and the project [README](../README.md).
 
 ---
 
