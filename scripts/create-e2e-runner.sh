@@ -226,8 +226,9 @@ else
         sudo usermod -aG docker gitlab-runner"
     log "GitLab runner registered."
 
-    # Add e2epool checkpoint hooks to runner config
-    log "Configuring e2epool checkpoint hooks in config.toml..."
+    # Add e2epool checkpoint hook to runner config (create only;
+    # finalization is handled by the poller/webhook automatically)
+    log "Configuring e2epool pre_build_script in config.toml..."
     ssh $SSH_OPTS "$SSH_USER@$IP" 'sudo python3 -' <<'PYSCRIPT'
 path = "/etc/gitlab-runner/config.toml"
 content = open(path).read()
@@ -236,17 +237,14 @@ pre = """export CHECKPOINT=$(e2epool create --job-id "$CI_JOB_ID") || { echo "Fa
 echo "Checkpoint created - $CHECKPOINT"
 """
 
-post = """if [ -n "$CHECKPOINT" ]; then e2epool finalize --checkpoint "$CHECKPOINT" --status "$CI_JOB_STATUS"; fi
-"""
-
-insert = '  pre_build_script = """\n' + pre + '"""\n  post_build_script = """\n' + post + '"""'
+insert = '  pre_build_script = """\n' + pre + '"""'
 content = content.replace('executor = "shell"', 'executor = "shell"\n' + insert)
 
 with open(path, "w") as f:
     f.write(content)
-print("config.toml updated with e2epool hooks")
+print("config.toml updated with e2epool hook")
 PYSCRIPT
-    log "Checkpoint hooks configured."
+    log "Checkpoint hook configured."
 fi
 
 # ---------------------------------------------------------------------------
