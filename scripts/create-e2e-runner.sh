@@ -294,12 +294,13 @@ if $DRY_RUN; then
     log "[dry-run] Would install e2epool agent on $SSH_USER@$IP"
     log "[dry-run] Agent config: controller_url=$WS_URL, runner_id=$RUNNER_ID, token=${RUNNER_TOKEN:0:8}..."
 else
-    # 6a: Install Python dependencies and e2epool package
+    # 6a: Install Python dependencies and e2epool package in a venv
     log "Installing e2epool package..."
     remote_ssh "sudo apt-get update -qq && \
-        sudo apt-get install -y -qq python3-pip libpq-dev >/dev/null && \
-        (sudo pip3 install --break-system-packages 'git+${E2EPOOL_REPO}' 2>/dev/null \
-         || sudo pip3 install 'git+${E2EPOOL_REPO}')"
+        sudo apt-get install -y -qq python3-pip python3-venv libpq-dev git >/dev/null && \
+        sudo python3 -m venv /opt/e2epool/venv && \
+        sudo /opt/e2epool/venv/bin/pip install 'git+${E2EPOOL_REPO}' && \
+        sudo ln -sf /opt/e2epool/venv/bin/e2epool /usr/local/bin/e2epool"
 
     # 6b: Write agent config
     log "Writing agent config..."
