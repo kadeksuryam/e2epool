@@ -222,7 +222,8 @@ else
             --url '${GITLAB_URL}' \
             --token '${GITLAB_TOKEN}' \
             --executor shell \
-            --name '${RUNNER_ID}'"
+            --name '${RUNNER_ID}' && \
+        sudo usermod -aG docker gitlab-runner"
     log "GitLab runner registered."
 
     # Add e2epool checkpoint hooks to runner config
